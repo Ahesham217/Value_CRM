@@ -1,3 +1,5 @@
+import { numericInputValue } from "./numeric-input";
+
 export type PresetCode = "EG-EGP" | "AE-USD" | "AE-EUR";
 export type OfficeCode = "EG" | "AE";
 export type CurrencyCode = "EGP" | "USD" | "EUR";
@@ -74,9 +76,9 @@ export type Product = {
   model_code: string;
   description: string;
   unit: string;
-  sell_price_egp: string | null;
-  sell_price_usd: string | null;
-  sell_price_eur: string | null;
+  sell_price_egp: string | number | null;
+  sell_price_usd: string | number | null;
+  sell_price_eur: string | number | null;
   archived_at: string | null;
   created_at: string;
   updated_at: string;
@@ -85,7 +87,7 @@ export type Product = {
 
 export type ProductCost = {
   product_id: string;
-  purchase_price: string | null;
+  purchase_price: string | number | null;
   purchase_currency: CurrencyCode | null;
 };
 
@@ -134,9 +136,9 @@ export type PiLine = {
   model_code: string;
   description: string;
   unit: string;
-  quantity: string;
-  unit_price: string | null;
-  line_total: string | null;
+  quantity: string | number;
+  unit_price: string | number | null;
+  line_total: string | number | null;
 };
 
 export type ProformaInvoice = {
@@ -161,12 +163,12 @@ export type ProformaInvoice = {
   draft_open: boolean;
   draft_version: number;
   discount_type: DiscountType;
-  discount_value: string | null;
-  shipping_amount: string | null;
-  installation_amount: string | null;
-  bank_charge_amount: string | null;
+  discount_value: string | number | null;
+  shipping_amount: string | number | null;
+  installation_amount: string | number | null;
+  bank_charge_amount: string | number | null;
   tax_enabled: boolean;
-  tax_percent: string | null;
+  tax_percent: string | number | null;
   tax_excludes_shipping: boolean;
   tax_excludes_installation: boolean;
   tax_excludes_bank_charge: boolean;
@@ -175,12 +177,12 @@ export type ProformaInvoice = {
   delivery_terms: string;
   warranty: string;
   additional_notes: string;
-  subtotal: string;
-  discount_amount: string;
-  net_items: string;
-  taxable_base: string | null;
-  tax_amount: string;
-  grand_total: string;
+  subtotal: string | number;
+  discount_amount: string | number;
+  net_items: string | number;
+  taxable_base: string | number | null;
+  tax_amount: string | number;
+  grand_total: string | number;
   created_at: string;
   updated_at: string;
 };
@@ -383,8 +385,8 @@ export function presetByCode(code: string | null | undefined) {
 }
 
 export function sellingPriceForCurrency(product: Product, currency: CurrencyCode | null): string | null {
-  if (currency === "EGP") return product.sell_price_egp;
-  if (currency === "USD") return product.sell_price_usd;
-  if (currency === "EUR") return product.sell_price_eur;
+  if (currency === "EGP") return product.sell_price_egp == null ? null : numericInputValue(product.sell_price_egp);
+  if (currency === "USD") return product.sell_price_usd == null ? null : numericInputValue(product.sell_price_usd);
+  if (currency === "EUR") return product.sell_price_eur == null ? null : numericInputValue(product.sell_price_eur);
   return null;
 }
