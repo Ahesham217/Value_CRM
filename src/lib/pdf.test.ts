@@ -152,7 +152,8 @@ describe("PI pdf", () => {
             account_number: "1000081724",
             iban: "AE690070100001000081724",
             correspondent_bank: "Correspondent Bank is Citibank, its Swift Code is: CITIUS33XXX",
-            notes: "SHA: Adding 72 USD to the total value of the PI as bank fees is must",
+            notes:
+              "Charges Details:\nOUR: No extra bank fees required\nSHA : Adding 72 USD to the total value of the PI as bank fess is must",
           },
           adjustments: {
             discount_type: "fixed",
@@ -181,6 +182,11 @@ describe("PI pdf", () => {
     expect(usd.text).toContain("CITIUS33XXX");
     expect(usd.text).toContain("Taxable base");
     expect(usd.text).toContain("USD 276.75");
+    expect(usd.text).toContain("Bank charge");
+    expect(usd.text).toContain("USD 72.00");
+    expect(usd.text).not.toContain("Adding 72");
+    expect(usd.text).not.toContain("bank fess");
+    expect(usd.text).not.toContain("No extra bank fees");
     expect(usd.text).not.toContain("does not include VAT");
     expect(usd.text).not.toContain("issued from our supplier");
 
@@ -226,6 +232,107 @@ describe("PI pdf", () => {
     expect(eur.text).not.toContain("ARAIAEADXXX");
     expect(eur.text).not.toContain("CITIUS33XXX");
     expect(eur.text).not.toContain("issued from our supplier");
+    expect(eur.text).not.toContain("Bank charge");
+    expect(eur.text).not.toContain("72 EUR");
+    expect(eur.text).not.toContain("Adding 72");
+  });
+
+  it("prints only a bank charge that is included in the total", async () => {
+    const omitted = await textOf(
+      await renderPiPdf(
+        snapshot({
+          layout_version: "uae-v1",
+          preset_code: "AE-USD",
+          office: "AE",
+          currency: "USD",
+          display_number: "AE-2026-00011",
+          pi_number: "AE-2026-00011",
+          bank: {
+            bank_name: "Arab African International Bank",
+            branch: "Dubai",
+            address: "",
+            swift: "ARAIAEADXXX",
+            account_name: "Value Technologies EMEA FZ-LLC",
+            account_number: "1000081724",
+            iban: "AE690070100001000081724",
+            correspondent_bank: "",
+            notes: "Charges Details:\nOUR: No extra bank fees required\nSHA : Adding 72 USD to the total value of the PI as bank fess is must",
+          },
+          adjustments: {
+            discount_type: "none",
+            discount_value: null,
+            discount_amount: "0.00",
+            shipping: null,
+            installation: null,
+            bank_charge: null,
+            tax_enabled: false,
+            tax_percent: null,
+            tax_excludes_shipping: false,
+            tax_excludes_installation: false,
+            tax_excludes_bank_charge: false,
+            subtotal: "200.00",
+            net_items: "200.00",
+            taxable_base: null,
+            tax_amount: "0.00",
+            grand_total: "200.00",
+          },
+        }),
+      ),
+    );
+    expect(omitted.text).toContain("USD 200.00");
+    expect(omitted.text).not.toContain("Bank charge");
+    expect(omitted.text).not.toContain("Adding 72");
+    expect(omitted.text).not.toContain("72 USD");
+    expect(omitted.text).not.toContain("bank fess");
+
+    const entered = await textOf(
+      await renderPiPdf(
+        snapshot({
+          layout_version: "uae-v1",
+          preset_code: "AE-EUR",
+          office: "AE",
+          currency: "EUR",
+          display_number: "AE-2026-00012",
+          pi_number: "AE-2026-00012",
+          bank: {
+            bank_name: "Arab African International Bank",
+            branch: "Dubai",
+            address: "",
+            swift: "ARAIAEAD",
+            account_name: "Value Technologies EMEA FZ-LLC",
+            account_number: "1000080086",
+            iban: "AE630070100001000080086",
+            correspondent_bank: "",
+            notes: "SHA : Adding 72 EUR to the total value of the PI as bank fess is must\nQuote the PI number on the transfer.",
+          },
+          adjustments: {
+            discount_type: "none",
+            discount_value: null,
+            discount_amount: "0.00",
+            shipping: null,
+            installation: null,
+            bank_charge: "15.50",
+            tax_enabled: false,
+            tax_percent: null,
+            tax_excludes_shipping: false,
+            tax_excludes_installation: false,
+            tax_excludes_bank_charge: false,
+            subtotal: "200.00",
+            net_items: "200.00",
+            taxable_base: null,
+            tax_amount: "0.00",
+            grand_total: "215.50",
+          },
+        }),
+      ),
+    );
+    expect(entered.text).toContain("Bank charge");
+    expect(entered.text).toContain("EUR 15.50");
+    expect(entered.text).toContain("EUR 215.50");
+    expect(entered.text).toContain("Quote the PI number on the transfer.");
+    expect(entered.text).not.toContain("Adding 72");
+    expect(entered.text).not.toContain("72 EUR");
+    expect(entered.text).not.toContain("bank fess");
   });
 
   it("wraps a long description across multiple pages and repeats the item heading", async () => {

@@ -115,7 +115,7 @@ Identity and bank details were taken from `reference-templates`:
 - `Update New proforma invoice USD.xlsx`
 - `Arab African International Bank   EURO ACCOUNT.xlsx`
 
-Account numbers, IBANs, and SWIFT codes are stored as text. The UAE legal address is Ras Al Khaimah. The supplier-invoice sentence in the UAE workbooks is not part of this application. USD and EUR bank notes keep the workbook wording, including its typos, and an administrator can edit them.
+Account numbers, IBANs, and SWIFT codes are stored as text. The UAE legal address is Ras Al Khaimah. The supplier-invoice sentence in the UAE workbooks is not part of this application. The workbook instruction to add a fixed 72 USD or 72 EUR bank charge is not part of the presets. A bank charge is optional and is typed on each PI. The PDF prints that amount only when it is included in the total.
 
 Egypt and UAE are the only PDF layouts. UAE uses the selected USD or EUR preset. A PI cannot be issued until the preset has a company name, address, bank name, account name, account number, IBAN, and SWIFT. Settings shows **Ready to issue** or **Needs configuration**.
 

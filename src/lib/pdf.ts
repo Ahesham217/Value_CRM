@@ -263,6 +263,25 @@ function terms(snapshot: PiSnapshot): Content {
   };
 }
 
+function isFixedBankChargeInstruction(line: string): boolean {
+  const normalized = line.trim().toLowerCase();
+  if (!normalized) return false;
+  if (normalized === "charges details:" || normalized === "charges details") return true;
+  if (normalized.startsWith("our:") && normalized.includes("no extra bank fees")) return true;
+  if (/sha\s*:/.test(normalized) && /72/.test(normalized)) return true;
+  if (/adding\s+72\s*(usd|eur)/.test(normalized)) return true;
+  if (/72\s*(usd|eur)/.test(normalized) && /bank fe/.test(normalized)) return true;
+  return false;
+}
+
+export function customerBankNotes(notes: string): string {
+  return paragraph(notes)
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line && !isFixedBankChargeInstruction(line))
+    .join("\n");
+}
+
 function bank(snapshot: PiSnapshot): Content {
   const details = snapshot.bank;
   const lines = [
@@ -274,7 +293,7 @@ function bank(snapshot: PiSnapshot): Content {
     details.account_number ? `Account no.: ${details.account_number}` : "",
     details.iban ? `IBAN: ${details.iban}` : "",
     details.correspondent_bank || "",
-    details.notes || "",
+    customerBankNotes(details.notes),
   ].filter((line) => paragraph(line));
   return {
     stack: [

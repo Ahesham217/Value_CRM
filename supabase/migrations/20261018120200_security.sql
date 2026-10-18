@@ -70,7 +70,7 @@ insert into public.company_presets (
   '1000081724',
   'AE690070100001000081724',
   'Correspondent Bank is Citibank , its Swift Code is : CITIUS33XXX',
-  E'Charges Details:\nOUR: No extra bank fees required\nSHA : Adding 72 USD to the total value of the PI as bank fess is must'
+  ''
 ),
 (
   'AE-EUR', 'AE', 'EUR', 'uae',
@@ -86,7 +86,7 @@ insert into public.company_presets (
   '1000080086',
   'AE630070100001000080086',
   '',
-  E'Charges Details:\nOUR: No extra bank fees required\nSHA : Adding 72 EUR to the total value of the PI as bank fess is must'
+  ''
 );
 
 insert into public.default_terms (id, price_basis, payment_terms, delivery_terms, warranty, additional_notes)

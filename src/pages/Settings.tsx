@@ -204,7 +204,7 @@ export function SettingsPage() {
               <Field label="Account number"><input className={controlClass} value={preset.account_number} onChange={(event) => updatePreset(preset.code, { account_number: event.target.value })} /></Field>
               <Field label="IBAN"><input className={controlClass} value={preset.iban} onChange={(event) => updatePreset(preset.code, { iban: event.target.value })} /></Field>
               <Field label="Correspondent bank"><TextArea value={preset.correspondent_bank} onChange={(event) => updatePreset(preset.code, { correspondent_bank: event.target.value })} /></Field>
-              <Field label="Bank notes"><TextArea value={preset.bank_notes} onChange={(event) => updatePreset(preset.code, { bank_notes: event.target.value })} /></Field>
+              <Field label="Bank notes" hint="Printed with the bank details. A bank charge is entered on each PI and is not taken from this note."><TextArea value={preset.bank_notes} onChange={(event) => updatePreset(preset.code, { bank_notes: event.target.value })} /></Field>
               <Field label="Logo" hint="PNG, JPEG, or WebP under 400 KB. A new upload does not change issued PDFs.">
                 <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void onLogo(preset.code, event.target.files?.[0])} />
                 {preset.logo_base64 ? <img alt="" className="mt-2 h-10" src={`data:${preset.logo_content_type || "image/png"};base64,${preset.logo_base64}`} /> : <p className="mt-2 text-xs text-slate-500">No logo uploaded.</p>}
