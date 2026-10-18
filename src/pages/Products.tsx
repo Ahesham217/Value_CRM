@@ -73,7 +73,7 @@ export function ProductsPage() {
       </div>
       {error ? <p className="text-sm text-red-800">{error}</p> : null}
       {loading ? <p className="text-sm text-slate-600">Loading products…</p> : null}
-      {!loading && rows.length === 0 ? <EmptyState title="No products yet" body="A PI can also use a custom line when the item is not in the catalogue." /> : null}
+      {!loading && rows.length === 0 ? <EmptyState title="No products yet" body="Add a product here, or create one while preparing a proforma invoice." /> : null}
       {rows.length > 0 ? (
         <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
           <table className="min-w-full text-left text-sm">

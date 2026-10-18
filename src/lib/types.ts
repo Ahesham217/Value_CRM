@@ -82,7 +82,7 @@ export type Product = {
   archived_at: string | null;
   created_at: string;
   updated_at: string;
-  vendors?: { company_name: string } | null;
+  vendors?: { company_name: string; archived_at?: string | null } | null;
 };
 
 export type ProductCost = {
@@ -384,7 +384,14 @@ export function presetByCode(code: string | null | undefined) {
   return PRESETS.find((preset) => preset.code === code) ?? null;
 }
 
-export function sellingPriceForCurrency(product: Product, currency: CurrencyCode | null): string | null {
+export function sellingPriceForCurrency(
+  product: {
+    sell_price_egp: string | number | null;
+    sell_price_usd: string | number | null;
+    sell_price_eur: string | number | null;
+  },
+  currency: CurrencyCode | null,
+): string | null {
   if (currency === "EGP") return product.sell_price_egp == null ? null : numericInputValue(product.sell_price_egp);
   if (currency === "USD") return product.sell_price_usd == null ? null : numericInputValue(product.sell_price_usd);
   if (currency === "EUR") return product.sell_price_eur == null ? null : numericInputValue(product.sell_price_eur);

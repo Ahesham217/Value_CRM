@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
 import { Banner, Button, Card, Field, PageHeader, Select, TextArea, controlClass } from "../components/ui";
 import { errorText } from "../lib/errors";
+import { isUniqueModelConflict } from "../lib/model-identity";
 import { can } from "../lib/permissions";
 import { numericInputValue } from "../lib/numeric-input";
 import { archiveRow } from "../lib/records";
@@ -91,7 +92,7 @@ export function ProductDetailPage() {
     setError(null);
     try {
       if (!vendorId) throw new Error("Choose a vendor.");
-      if (!modelCode.trim()) throw new Error("Model or product code is required.");
+      if (!modelCode.trim()) throw new Error("Model is required.");
       const payload = {
         vendor_id: vendorId,
         brand: brand.trim(),
@@ -128,7 +129,9 @@ export function ProductDetailPage() {
       setMessage("Product saved. Existing invoice lines are unchanged.");
       if (!id) navigate(`/products/${productId}`, { replace: true });
     } catch (caught) {
-      setError(errorText(caught));
+      setError(isUniqueModelConflict(caught)
+        ? `A product with model “${modelCode.trim()}” already exists. Matching ignores capitalisation and surrounding spaces, including archived products.`
+        : errorText(caught));
     } finally {
       setSaving(false);
     }
@@ -165,7 +168,9 @@ export function ProductDetailPage() {
             </Select>
           </Field>
           <Field label="Brand"><input className={controlClass} disabled={!manage} value={brand} onChange={(event) => setBrand(event.target.value)} /></Field>
-          <Field label="Model / product code"><input className={controlClass} required disabled={!manage} value={modelCode} onChange={(event) => setModelCode(event.target.value)} /></Field>
+          <Field label="Model" hint="Unique across the catalogue. Capitalisation and surrounding spaces do not make a different model.">
+            <input className={controlClass} required disabled={!manage} value={modelCode} onChange={(event) => setModelCode(event.target.value)} />
+          </Field>
           <Field label="Unit" hint="For example unit, set, license, or service.">
             <input className={controlClass} list="units" disabled={!manage} value={unit} onChange={(event) => setUnit(event.target.value)} />
             <datalist id="units"><option value="unit" /><option value="set" /><option value="license" /><option value="service" /></datalist>

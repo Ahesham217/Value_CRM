@@ -1,23 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
-import { Banner, Button, Card, Field, Modal, PageHeader, Select, TextArea, controlClass } from "../components/ui";
+import { PiItemSection } from "../components/PiItemSection";
+import { Banner, Button, Card, Field, PageHeader, Select, TextArea, controlClass } from "../components/ui";
+import { toCatalogueProduct } from "../lib/catalogue";
 import { generateAndDownload, previewDraftPdf, saveDraft } from "../lib/documents";
 import { errorText, isConflict } from "../lib/errors";
 import { formatMoney } from "../lib/format";
 import { calculateDocument } from "../lib/money";
 import { numericInputValue } from "../lib/numeric-input";
 import { can } from "../lib/permissions";
+import { editorLineFromStored, generationBlock, isBlankPlaceholder, isResolvedLine, linesForDraft, type EditorLine } from "../lib/pi-lines";
 import { supabase } from "../lib/supabase";
 import {
   PRESETS,
   presetByCode,
-  sellingPriceForCurrency,
   type Client,
   type ClientContact,
   type CompanyPreset,
-  type CurrencyCode,
   type DiscountType,
+  type DraftLineInput,
   type DraftPayload,
   type PiLine,
   type PiSnapshot,
@@ -26,22 +28,6 @@ import {
   type Profile,
   type ProformaInvoice,
 } from "../lib/types";
-
-type LineDraft = {
-  key: string;
-  product_id: string | null;
-  vendor_id: string | null;
-  vendor_name: string;
-  model_code: string;
-  description: string;
-  unit: string;
-  quantity: string;
-  unit_price: string;
-};
-
-function blankLine(): LineDraft {
-  return { key: crypto.randomUUID(), product_id: null, vendor_id: null, vendor_name: "", model_code: "", description: "", unit: "unit", quantity: "1", unit_price: "" };
-}
 
 function moneyOrNull(value: string, enabled: boolean): string | null {
   if (!enabled) return null;
@@ -55,6 +41,7 @@ export function PiEditorPage() {
   const canEdit = can(profile, "can_edit_drafts");
   const canGenerate = can(profile, "can_generate_pis");
   const [loading, setLoading] = useState(true);
+  const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [conflict, setConflict] = useState(false);
@@ -78,7 +65,7 @@ export function PiEditorPage() {
   const [salespeople, setSalespeople] = useState<Profile[]>([]);
   const [selectedSales, setSelectedSales] = useState<string[]>([]);
   const [leadId, setLeadId] = useState("");
-  const [lines, setLines] = useState<LineDraft[]>([blankLine()]);
+  const [lines, setLines] = useState<EditorLine[]>([]);
   const [discountType, setDiscountType] = useState<DiscountType>("none");
   const [discountValue, setDiscountValue] = useState("");
   const [shippingOn, setShippingOn] = useState(false);
@@ -97,9 +84,6 @@ export function PiEditorPage() {
   const [deliveryTerms, setDeliveryTerms] = useState("");
   const [warranty, setWarranty] = useState("");
   const [notes, setNotes] = useState("");
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [productQuery, setProductQuery] = useState("");
-  const [products, setProducts] = useState<Product[]>([]);
 
   const currency = presetByCode(presetCode)?.currency ?? null;
 
@@ -146,18 +130,28 @@ export function PiEditorPage() {
     setDeliveryTerms(pi.delivery_terms);
     setWarranty(pi.warranty);
     setNotes(pi.additional_notes);
-    const loadedLines = ((lineResult.data ?? []) as PiLine[]).map((line) => ({
-      key: line.id,
-      product_id: line.product_id,
-      vendor_id: line.vendor_id,
-      vendor_name: line.vendor_name,
-      model_code: line.model_code,
-      description: line.description,
-      unit: line.unit,
-      quantity: numericInputValue(line.quantity),
-      unit_price: numericInputValue(line.unit_price),
+    const storedLines = (lineResult.data ?? []) as PiLine[];
+    const productIds = [...new Set(storedLines.flatMap((line) => (line.product_id ? [line.product_id] : [])))];
+    const linked = new Map<string, ReturnType<typeof toCatalogueProduct>>();
+    if (productIds.length > 0) {
+      const productResult = await supabase.from("products").select("*, vendors(company_name, archived_at)").in("id", productIds);
+      if (productResult.error) throw productResult.error;
+      for (const row of (productResult.data ?? []) as Product[]) {
+        const product = toCatalogueProduct(row);
+        linked.set(product.id, product);
+      }
+    }
+    setLines(storedLines.map((line) => {
+      const product = line.product_id ? linked.get(line.product_id) : undefined;
+      return editorLineFromStored(line, product ? {
+        id: product.id,
+        model_code: product.model_code,
+        vendor_id: product.vendor_id,
+        vendor_name: product.vendor_name,
+        vendor_archived: product.vendor_archived,
+      } : null);
     }));
-    setLines(loadedLines.length ? loadedLines : [blankLine()]);
+    setReady(true);
     setPresets((presetResult.data ?? []) as CompanyPreset[]);
     setSalespeople((peopleResult.data ?? []) as Profile[]);
     if (pi.client_id) {
@@ -184,20 +178,12 @@ export function PiEditorPage() {
     return () => clearTimeout(handle);
   }, [clientQuery]);
 
-  useEffect(() => {
-    if (!pickerOpen) return;
-    const term = productQuery.trim().replace(/[%_]/g, "");
-    let request = supabase.from("products").select("*, vendors(company_name)").is("archived_at", null).order("model_code").limit(20);
-    if (term) request = request.or(`model_code.ilike.%${term}%,brand.ilike.%${term}%,description.ilike.%${term}%`);
-    void request.then(({ data }) => setProducts((data ?? []) as Product[]));
-  }, [pickerOpen, productQuery]);
-
   const totals = useMemo(() => {
     try {
       return {
         error: null as string | null,
         value: calculateDocument(
-          lines.map((line) => ({ quantity: line.quantity, unitPrice: line.unit_price.trim() ? line.unit_price.trim() : null })),
+          lines.map((line) => ({ quantity: line.quantity, unitPrice: line.unitPrice.trim() ? line.unitPrice.trim() : null })),
           {
             discountType,
             discountValue: discountType === "none" ? null : discountValue.trim() || "0",
@@ -217,7 +203,7 @@ export function PiEditorPage() {
     }
   }, [bankCharge, bankOn, discountType, discountValue, installation, installationOn, lines, shipping, shippingOn, taxEnabled, taxExcludesBank, taxExcludesInstallation, taxExcludesShipping, taxPercent]);
 
-  function payload(): DraftPayload {
+  function payload(draftLines: DraftLineInput[]): DraftPayload {
     return {
       preset_code: presetCode || null,
       pi_date: piDate || null,
@@ -245,16 +231,18 @@ export function PiEditorPage() {
       delivery_terms: deliveryTerms,
       warranty,
       additional_notes: notes,
-      lines: lines.map((line) => ({
-        product_id: line.product_id,
-        vendor_id: line.vendor_id,
-        model_code: line.model_code,
-        description: line.description,
-        unit: line.unit,
-        quantity: line.quantity,
-        unit_price: line.unit_price.trim() ? line.unit_price.trim() : null,
-      })),
+      lines: draftLines,
     };
+  }
+
+  function preparedPayload(): DraftPayload | null {
+    const prepared = linesForDraft(lines);
+    if (!prepared.ok) {
+      setMessage(null);
+      setError(prepared.message);
+      return null;
+    }
+    return payload(prepared.lines);
   }
 
   function previewSnapshot(): PiSnapshot {
@@ -316,14 +304,17 @@ export function PiEditorPage() {
         additional: [],
         prepared_by: profile?.full_name ?? "",
       },
-      lines: lines.map((line, index) => ({
-        model_code: line.model_code,
-        description: line.description,
-        unit: line.unit,
-        quantity: line.quantity,
-        unit_price: line.unit_price,
-        line_total: calculated.lines[index]?.lineTotal ?? "",
-      })),
+      lines: lines.flatMap((line, index) => {
+        if (!isResolvedLine(line) || !line.product) return [];
+        return [{
+          model_code: line.product.modelCode,
+          description: line.description,
+          unit: line.unit,
+          quantity: line.quantity,
+          unit_price: line.unitPrice,
+          line_total: calculated.lines[index]?.lineTotal ?? "",
+        }];
+      }),
       adjustments: {
         discount_type: discountType,
         discount_value: discountValue || null,
@@ -348,11 +339,13 @@ export function PiEditorPage() {
 
   async function onSave() {
     if (!id) return;
+    const body = preparedPayload();
+    if (!body) return;
     setBusy(true);
     setError(null);
     setConflict(false);
     try {
-      const result = await saveDraft(id, draftVersion, payload());
+      const result = await saveDraft(id, draftVersion, body);
       setDraftVersion(result.draft_version);
       setMessage("Draft saved.");
     } catch (caught) {
@@ -365,11 +358,19 @@ export function PiEditorPage() {
 
   async function onGenerate() {
     if (!id) return;
+    const blocked = generationBlock(lines);
+    if (blocked) {
+      setMessage(null);
+      setError(blocked);
+      return;
+    }
+    const body = preparedPayload();
+    if (!body) return;
     if (!window.confirm(piNumber ? "Issue the next revision of this PI? The previous version stays unchanged." : "Issue this PI? It will receive a permanent number.")) return;
     setBusy(true);
     setError(null);
     try {
-      await generateAndDownload(id, draftVersion, payload());
+      await generateAndDownload(id, draftVersion, body);
       navigate(`/pis/${id}`);
     } catch (caught) {
       setConflict(isConflict(caught));
@@ -378,38 +379,6 @@ export function PiEditorPage() {
     } finally {
       setBusy(false);
     }
-  }
-
-  function addProduct(product: Product) {
-    const price = currency ? sellingPriceForCurrency(product, currency) : null;
-    setLines((current) => [
-      ...current.filter((line) => line.model_code || line.description || line.unit_price),
-      {
-        key: crypto.randomUUID(),
-        product_id: product.id,
-        vendor_id: product.vendor_id,
-        vendor_name: product.vendors?.company_name ?? "",
-        model_code: product.model_code,
-        description: [product.brand, product.description].filter(Boolean).join("\n"),
-        unit: product.unit,
-        quantity: "1",
-        unit_price: numericInputValue(price),
-      },
-    ]);
-    setPickerOpen(false);
-    if (price === null) setMessage(`No default ${currency ?? ""} selling price for ${product.model_code}. Enter the price for this PI.`);
-  }
-
-  function moveLine(index: number, direction: -1 | 1) {
-    setLines((current) => {
-      const next = [...current];
-      const target = index + direction;
-      if (target < 0 || target >= next.length) return current;
-      const [item] = next.splice(index, 1);
-      if (!item) return current;
-      next.splice(target, 0, item);
-      return next;
-    });
   }
 
   async function chooseClient(nextId: string) {
@@ -428,6 +397,7 @@ export function PiEditorPage() {
   }
 
   if (loading) return <p className="text-sm text-slate-600">Loading draft…</p>;
+  if (!ready) return <Banner tone="error">{error || "This draft could not be loaded."}</Banner>;
   if (!draftOpen) {
     return (
       <div className="space-y-3">
@@ -446,7 +416,11 @@ export function PiEditorPage() {
           <>
             <Link to={`/pis/${id}`}><Button type="button" variant="secondary">View</Button></Link>
             {canEdit ? <Button type="button" onClick={() => void onSave()} disabled={busy}>Save draft</Button> : null}
-            <Button type="button" onClick={() => { try { void previewDraftPdf(previewSnapshot()); } catch (caught) { setError(errorText(caught)); } }} disabled={busy}>Preview</Button>
+            <Button type="button" onClick={() => {
+              const body = preparedPayload();
+              if (!body) return;
+              try { void previewDraftPdf(previewSnapshot()); } catch (caught) { setError(errorText(caught)); }
+            }} disabled={busy}>Preview</Button>
             {canGenerate ? <Button type="button" variant="primary" onClick={() => void onGenerate()} disabled={busy}>{busy ? "Working…" : "Generate & Download"}</Button> : null}
           </>
         }
@@ -511,42 +485,18 @@ export function PiEditorPage() {
         </div>
         <p className="mt-3 text-sm text-slate-600">Prepared by: {profile?.full_name}. This is recorded when the version is generated and cannot be edited.</p>
       </Card>
-      <Card>
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="font-semibold">Items</h2>
-          {canEdit ? (
-            <div className="flex gap-2">
-              <Button type="button" onClick={() => setPickerOpen(true)}>Add from catalogue</Button>
-              <Button type="button" onClick={() => setLines((current) => [...current, blankLine()])}>Add custom item</Button>
-            </div>
-          ) : null}
-        </div>
-        <p className="mb-3 text-sm text-slate-600">One PI can include products from several vendors. Vendor is internal and is omitted from the PDF. Editing a line does not change the catalogue.</p>
-        <div className="space-y-3">
-          {lines.map((line, index) => (
-            <div key={line.key} className="rounded-md border border-slate-200 p-3">
-              <div className="grid gap-2 md:grid-cols-6">
-                <Field label="Model"><input className={controlClass} disabled={!canEdit} value={line.model_code} onChange={(event) => setLines((current) => current.map((item) => item.key === line.key ? { ...item, model_code: event.target.value } : item))} /></Field>
-                <Field label="Unit"><input className={controlClass} disabled={!canEdit} value={line.unit} onChange={(event) => setLines((current) => current.map((item) => item.key === line.key ? { ...item, unit: event.target.value } : item))} /></Field>
-                <Field label="Quantity"><input className={controlClass} inputMode="decimal" disabled={!canEdit} value={line.quantity} onChange={(event) => setLines((current) => current.map((item) => item.key === line.key ? { ...item, quantity: event.target.value } : item))} /></Field>
-                <Field label={`Unit price${currency ? ` (${currency})` : ""}`}><input className={controlClass} inputMode="decimal" disabled={!canEdit} value={line.unit_price} onChange={(event) => setLines((current) => current.map((item) => item.key === line.key ? { ...item, unit_price: event.target.value } : item))} /></Field>
-                <Field label="Line total"><input className={controlClass} readOnly value={formatMoney(totals.value?.lines[index]?.lineTotal, currency)} /></Field>
-                <Field label="Vendor (internal)"><input className={controlClass} readOnly value={line.vendor_name} /></Field>
-              </div>
-              <div className="mt-2">
-                <Field label="Description"><TextArea disabled={!canEdit} value={line.description} onChange={(event) => setLines((current) => current.map((item) => item.key === line.key ? { ...item, description: event.target.value } : item))} /></Field>
-              </div>
-              {canEdit ? (
-                <div className="mt-2 flex gap-2">
-                  <Button type="button" onClick={() => moveLine(index, -1)}>Move up</Button>
-                  <Button type="button" onClick={() => moveLine(index, 1)}>Move down</Button>
-                  <Button type="button" variant="ghost" onClick={() => setLines((current) => current.filter((item) => item.key !== line.key))}>Remove</Button>
-                </div>
-              ) : null}
-            </div>
-          ))}
-        </div>
-      </Card>
+      <PiItemSection
+        lines={lines}
+        currency={currency}
+        canEdit={canEdit}
+        canManageProducts={can(profile, "can_manage_products")}
+        totals={(totals.value?.lines ?? []).map((line) => line.lineTotal)}
+        onChange={setLines}
+        onNotice={(text) => {
+          setError(null);
+          setMessage(text);
+        }}
+      />
       <Card>
         <h2 className="mb-3 font-semibold">Adjustments</h2>
         <div className="grid gap-3 md:grid-cols-3">
@@ -584,7 +534,7 @@ export function PiEditorPage() {
               {taxEnabled ? <div>Taxable base: {formatMoney(totals.value?.taxableBase, currency)}</div> : null}
               {taxEnabled ? <div>Tax: {formatMoney(totals.value?.taxAmount, currency)}</div> : null}
               <div className="font-semibold">Grand total: {formatMoney(totals.value?.grandTotal, currency)}</div>
-              {totals.value && totals.value.unpricedCount > 0 ? <div className="text-red-800">{totals.value.unpricedCount} line(s) still need a selling price.</div> : null}
+              {lines.some((line) => !isBlankPlaceholder(line) && line.unitPrice.trim() === "") ? <div className="text-red-800">{lines.filter((line) => !isBlankPlaceholder(line) && line.unitPrice.trim() === "").length} line(s) still need a selling price.</div> : null}
             </>
           )}
         </dl>
@@ -599,21 +549,6 @@ export function PiEditorPage() {
           <Field label="Additional notes"><TextArea disabled={!canEdit} value={notes} onChange={(event) => setNotes(event.target.value)} /></Field>
         </div>
       </Card>
-      {pickerOpen ? (
-        <Modal title="Add a catalogue product" onClose={() => setPickerOpen(false)}>
-          <Field label="Search"><input className={controlClass} value={productQuery} onChange={(event) => setProductQuery(event.target.value)} /></Field>
-          <ul className="mt-3 max-h-80 space-y-2 overflow-auto text-sm">
-            {products.map((product) => (
-              <li key={product.id}>
-                <button type="button" className="w-full rounded-md border border-slate-200 px-3 py-2 text-left hover:bg-slate-50" onClick={() => addProduct(product)}>
-                  <span className="font-medium">{product.model_code}</span> · {product.brand} · {product.vendors?.company_name}
-                  <span className="block text-slate-500">{currency ? formatMoney(sellingPriceForCurrency(product, currency as CurrencyCode), currency) : "Choose a currency first"}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </Modal>
-      ) : null}
     </div>
   );
 }
