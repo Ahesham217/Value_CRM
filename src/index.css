@@ -1,0 +1,29 @@
+@import "tailwindcss";
+
+@theme {
+  --color-navy-950: #0b1c2e;
+  --color-navy-900: #12324d;
+  --color-navy-800: #1a4468;
+  --color-navy-100: #e7eef5;
+  --font-sans: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: #f3f5f8;
+  color: #1c2833;
+  font-family: var(--font-sans);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid #1a4468;
+  outline-offset: 2px;
+}
