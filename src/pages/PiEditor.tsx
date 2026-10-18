@@ -6,6 +6,7 @@ import { generateAndDownload, previewDraftPdf, saveDraft } from "../lib/document
 import { errorText, isConflict } from "../lib/errors";
 import { formatMoney } from "../lib/format";
 import { calculateDocument } from "../lib/money";
+import { numericInputValue } from "../lib/numeric-input";
 import { can } from "../lib/permissions";
 import { supabase } from "../lib/supabase";
 import {
@@ -128,15 +129,15 @@ export function PiEditorPage() {
     setLeadId(pi.lead_salesperson_id ?? "");
     setSelectedSales((salesResult.data ?? []).map((row) => row.user_id as string));
     setDiscountType(pi.discount_type);
-    setDiscountValue(pi.discount_value ?? "");
+    setDiscountValue(numericInputValue(pi.discount_value));
     setShippingOn(pi.shipping_amount !== null);
-    setShipping(pi.shipping_amount ?? "");
+    setShipping(numericInputValue(pi.shipping_amount));
     setInstallationOn(pi.installation_amount !== null);
-    setInstallation(pi.installation_amount ?? "");
+    setInstallation(numericInputValue(pi.installation_amount));
     setBankOn(pi.bank_charge_amount !== null);
-    setBankCharge(pi.bank_charge_amount ?? "");
+    setBankCharge(numericInputValue(pi.bank_charge_amount));
     setTaxEnabled(pi.tax_enabled);
-    setTaxPercent(pi.tax_percent ?? "");
+    setTaxPercent(numericInputValue(pi.tax_percent));
     setTaxExcludesShipping(pi.tax_excludes_shipping);
     setTaxExcludesInstallation(pi.tax_excludes_installation);
     setTaxExcludesBank(pi.tax_excludes_bank_charge);
@@ -153,8 +154,8 @@ export function PiEditorPage() {
       model_code: line.model_code,
       description: line.description,
       unit: line.unit,
-      quantity: line.quantity,
-      unit_price: line.unit_price ?? "",
+      quantity: numericInputValue(line.quantity),
+      unit_price: numericInputValue(line.unit_price),
     }));
     setLines(loadedLines.length ? loadedLines : [blankLine()]);
     setPresets((presetResult.data ?? []) as CompanyPreset[]);
@@ -258,7 +259,8 @@ export function PiEditorPage() {
 
   function previewSnapshot(): PiSnapshot {
     const preset = presets.find((item) => item.code === presetCode);
-    if (!preset || !totals.value || !currency) throw new Error("Choose a preset and correct the totals before previewing.");
+    if (!preset || !currency) throw new Error("Choose an office and currency preset before previewing.");
+    if (!totals.value) throw new Error(totals.error ?? "Correct the totals before previewing.");
     const lead = salespeople.find((person) => person.id === leadId);
     const client = clients.find((item) => item.id === clientId);
     const contact = contacts.find((item) => item.id === contactId);
@@ -391,11 +393,11 @@ export function PiEditorPage() {
         description: [product.brand, product.description].filter(Boolean).join("\n"),
         unit: product.unit,
         quantity: "1",
-        unit_price: price ?? "",
+        unit_price: numericInputValue(price),
       },
     ]);
     setPickerOpen(false);
-    if (!price) setMessage(`No default ${currency ?? ""} selling price for ${product.model_code}. Enter the price for this PI.`);
+    if (price === null) setMessage(`No default ${currency ?? ""} selling price for ${product.model_code}. Enter the price for this PI.`);
   }
 
   function moveLine(index: number, direction: -1 | 1) {

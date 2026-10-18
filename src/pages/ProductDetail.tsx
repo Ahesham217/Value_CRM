@@ -4,6 +4,7 @@ import { useAuth } from "../auth/AuthProvider";
 import { Banner, Button, Card, Field, PageHeader, Select, TextArea, controlClass } from "../components/ui";
 import { errorText } from "../lib/errors";
 import { can } from "../lib/permissions";
+import { numericInputValue } from "../lib/numeric-input";
 import { archiveRow } from "../lib/records";
 import { supabase } from "../lib/supabase";
 import type { CurrencyCode, Product, ProductCost, Vendor } from "../lib/types";
@@ -64,15 +65,15 @@ export function ProductDetailPage() {
       setModelCode(product.model_code);
       setDescription(product.description);
       setUnit(product.unit);
-      setEgp(product.sell_price_egp ?? "");
-      setUsd(product.sell_price_usd ?? "");
-      setEur(product.sell_price_eur ?? "");
+      setEgp(numericInputValue(product.sell_price_egp));
+      setUsd(numericInputValue(product.sell_price_usd));
+      setEur(numericInputValue(product.sell_price_eur));
       setArchivedAt(product.archived_at);
       if (seeCost) {
         const costResult = await supabase.from("product_costs").select("*").eq("product_id", id).maybeSingle();
         if (costResult.data) {
           const cost = costResult.data as ProductCost;
-          setPurchasePrice(cost.purchase_price ?? "");
+          setPurchasePrice(numericInputValue(cost.purchase_price));
           setPurchaseCurrency(cost.purchase_currency ?? "");
         }
       }
