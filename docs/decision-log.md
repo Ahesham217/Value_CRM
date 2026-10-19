@@ -182,3 +182,23 @@ Use `npm run build:preview` for preview builds. The script follows Vite's deploy
 - Reason: The customer needs a contact, while preparation attribution is for internal records.
 - Consequences or limitations: Lead assignments, permissions, preparer attribution, and immutable snapshots remain unchanged. This explicitly supersedes the customer-visible preparer part of DEC-004 and is an intentional presentation/privacy exception to the otherwise version-frozen layout policy: previews and regenerated downloads, including older snapshots, use this customer-facing attribution rule. The company contact is not replaced with the client's contact. Previously downloaded PDFs on external devices cannot be altered.
 - References: `src/lib/pdf.ts`, `src/lib/pdf.test.ts`, README PDF behaviour.
+
+## DEC-016
+
+- Decision date: 2026-10-19
+- Documented: 2026-10-19
+- Status: Implemented
+- Decision: Show PI history on a saved product, using each issued version's immutable snapshot and each open draft's saved lines. Match new snapshots by product id. Match older snapshots that have no product id only by the saved model.
+- Reason: Staff need to see where a product was quoted, to whom, and at what unit price, without treating the current catalogue or the mutable working copy as the issued record.
+- Consequences or limitations:
+  - The history is on the product page, below the existing product details. It is not shown for a product that has not been saved. Unsaved edits do not change which product is queried.
+  - The latest issued revision of a PI is chosen before its lines are matched. If that revision does not contain the product, it is not shown, and an older revision that did contain it is not presented as the current offer. **Include older revisions** adds those earlier issued versions with their own labels and saved prices.
+  - An open initial draft and an open revision draft are included from their saved lines. A revision draft is separate from the latest issued version. A closed working copy is not shown as an extra draft. A duplicate PI is its own document. Multiple matching lines in one version stay separate.
+  - The displayed figure is the saved quoted unit price before invoice-wide discounts, tax, and charges. The history does not allocate a discount across lines, convert currencies, or calculate net prices, revenue, or margins. Zero stays zero. A missing price stays missing.
+  - Issued rows keep that version's saved client, date, model, description, quantity, unit, price, and currency. **PI status** on an issued row is the parent invoice's current tracking status. Draft rows are always drafts. No historical status events are invented.
+  - New snapshots store `line_id`, `product_id`, and `position` on each line. The PDF renderer ignores those identifiers. Existing snapshots and PDFs are not rewritten.
+  - A line with a product id matches only that id, even if the saved model text differs or matches another product. A line with no product id matches the current catalogue model after trimming and ignoring case. A later rename of that model can leave the old line unmatched. The row says when the match used the model only.
+  - Archiving a product or vendor does not remove history.
+  - `private.product_pi_history` is security definer, with an empty search path, and calls the existing active-member and `can_read_pi` checks. Rows, counts, and client, currency, and status options use that same authorized set. The public wrapper is security invoker. Anonymous users cannot execute it. The query does not read `product_costs`.
+  - Ordering is newest PI date first, then PI number, then latest issued before an open revision draft, then older revisions, then initial drafts, then line position. The database applies the filters and the page size.
+- References: `supabase/migrations/20261019150000_product_pi_history.sql`, `src/components/ProductPiHistory.tsx`, `src/pages/ProductDetail.tsx`, `README.md`
