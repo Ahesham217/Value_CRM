@@ -152,3 +152,8 @@ Historical decision dates are **unknown** where the repository shows the impleme
 - Reason: Review an unmerged UI branch at a preview URL while production remains on main.
 - Consequences or limitations: Production continues to use `wrangler deploy`. The generated configuration must retain the preview block and built assets directory. A preview configured with the production Supabase URL shares live data; it is not a separate test database. Preview invitation/reset redirects require allowlisting.
 - References: `wrangler.jsonc`, README branch previews, PR #6.
+
+
+### DEC-013 implementation follow-up — 2026-10-19
+
+Use `npm run build:preview` for preview builds. The script follows Vite's deploy-config redirect and ensures the generated configuration has a `previews` object, because the hosted preview repeatedly reported that block missing. It preserves all existing settings and validates built assets. Production keeps `npm run build` and `npx wrangler deploy`. Verified the build and a simulated missing-block repair locally; no preview was published by the agent.
