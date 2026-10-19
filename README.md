@@ -4,6 +4,10 @@ Internal application for Value Technologies. Staff save clients, vendors, and pr
 
 The hosted database is the Supabase project **Value CRM** (`idhqrvrpzlkpyyqlkozl`, eu-west-1) in the Value Technologies organization. Verifications and Value-Website are separate applications and were not modified.
 
+## Project decisions
+
+Significant product and technical decisions are recorded in [docs/decision-log.md](docs/decision-log.md). Update that log when a change affects business rules, architecture, permissions, document generation, or storage.
+
 ## Local setup
 
 Requirements: Node.js 22 or newer.
@@ -54,9 +58,12 @@ supabase db query --linked -f supabase/migrations/20261018120400_indexes.sql
 supabase db query --linked -f supabase/migrations/20261018130500_clear_uae_fixed_bank_charge_notes.sql
 supabase db query --linked -f supabase/migrations/20261018133347_pi_default_cairo_dates.sql
 supabase db query --linked -f supabase/migrations/20261018143000_product_model_identity.sql
+supabase db query --linked -f supabase/migrations/20261019080451_on_demand_pi_pdfs.sql
 ```
 
 The first migration installs `public.rls_auto_enable()` and the `ensure_rls` event trigger. That is the same automatic RLS trigger used on the other Value Technologies projects: every new table in `public` gets row level security. The trigger does not create policies. This repo creates those policies explicitly and also enables RLS in the table statements.
+
+`20261019080451_on_demand_pi_pdfs.sql` is included in the list above and has been applied to Value CRM. It does not rewrite issued snapshots or existing PDF metadata.
 
 `20261018120300_egypt_logo.sql` stores the logo extracted from `reference-templates/Egypt Template.xlsx`. The UAE workbooks do not contain a logo. If Settings shows no Egypt logo, run that file once in the SQL editor.
 
@@ -130,13 +137,13 @@ Each item on a draft is a catalogue product. Add it under the last line, search 
 
 Drag the row handle, or use Move up and Move down, to set the order. That order is kept on the draft and used by preview, the issued PDF, duplicates, and later revisions. Older issued versions keep the order they were generated with.
 
-A draft line from before this rule that has no matching product stays on the draft and is marked until someone selects or creates a product. It cannot be saved again or generated until then. The migration does not fill those lines in, and it does not change issued snapshots or stored PDFs.
+A draft line from before this rule that has no matching product stays on the draft and is marked until someone selects or creates a product. It cannot be saved again or generated until then. The migration does not fill those lines in, and it does not change issued snapshots.
 
-Drafts are editable. **Generate & Download** allocates the permanent number, stores version 0 as an immutable snapshot, and uploads the PDF. The number looks like `EG-2026-00001` or `AE-2026-00001`. Egypt has one sequence. UAE shares one sequence across USD and EUR. The year comes from the PI date and the sequence resets each year. Allocation is a locked counter inside the database transaction. A failed PDF upload does not allocate another number.
+Drafts are editable. **Generate & Download** calls the database generation function, which allocates the permanent number and stores version 0 as an immutable snapshot. The browser then renders the PDF from that returned snapshot and downloads it. The PDF is not uploaded. The number looks like `EG-2026-00001` or `AE-2026-00001`. Egypt has one sequence. UAE shares one sequence across USD and EUR. The year comes from the PI date and the sequence resets each year. Allocation is a locked counter inside the database transaction. If rendering or the browser download fails after the database has issued the PI, the number and version stay. The message says the PI was issued and points to **Download** in version history. Trying again from there renders the same snapshot and does not allocate another number or revision.
 
 Issued office, currency, year, and base number cannot be revised. Duplicate the PI when those need to change.
 
-**Create revision** opens the one allowed revision draft. Generating it stores R1, R2, and so on, and keeps every older version and its PDF. **Duplicate** creates a new draft with no number.
+**Create revision** opens the one allowed revision draft. Generating it stores R1, R2, and so on, and keeps every older version. **Duplicate** creates a new draft with no number. Each issued version has **Download**. That renders the version's saved snapshot locally, including versions that were previously marked ready or pending in storage metadata. Download does not require permission to generate a new PI. Someone who can read the version can download it. Someone who cannot read the PI cannot read the snapshot.
 
 Tracking statuses are Draft, Sent, Accepted, and Cancelled. Generating a PDF does not mark it sent. An issued document whose tracking status is still draft is shown as **Issued**. Issued PIs are cancelled, not deleted. Unissued drafts can be deleted.
 
@@ -154,11 +161,15 @@ Totals are calculated in the database with `numeric` rounding, and the editor pr
 
 A blank price is unknown, not zero. There is no currency conversion and no automatic tax determination. Unused adjustments are omitted from the PDF. The VAT-exclusion sentence is omitted when tax is included.
 
-The customer PDF contains the company, client, bill-to, ship-to, lead salesperson name and phone, preparer name, items, totals, terms, and bank details. Additional salespeople, purchase prices, and vendors stay internal. Preview and download use the same pdfmake renderer. After a successful upload, downloads use the stored file. Replacing the logo or a catalogue row does not change an issued snapshot. The snapshot keeps its own copy of the logo.
+The customer PDF contains the company, client, bill-to, ship-to, lead salesperson name and phone, preparer name, items, totals, terms, and bank details. Additional salespeople, purchase prices, and vendors stay internal. Draft preview and issued download use the same pdfmake renderer. The renderer dispatches on the snapshot's `layout_version` (`egypt-v1` or `uae-v1`). An unsupported layout version is reported and is not drawn with a different layout. The issued PDF is rendered only from the snapshot: client and contact, line order, quantities, units, prices, saved totals, terms, company and bank details, salesperson and preparer, dates, and the saved logo. Current client, product, user, logo, or bank records are not read to fill an old document. If a snapshot is missing data the renderer needs, the download stops with that gap instead of substituting current records. Replacing the logo or a catalogue row does not change an issued snapshot.
+
+`pi_versions.pdf_status` and `pdf_path` remain as legacy metadata. New versions are stored as `issued` with no file path. Older rows may still say `pending` or `ready`; the screen does not treat that as a failed download. Previously stored files in the private `pi-pdfs` bucket are left in place. Removing them is a separate step, described in [docs/cleanup-pi-pdfs.md](docs/cleanup-pi-pdfs.md), and it has not been run.
+
+A newly rendered PDF uses the saved content and layout. Its file bytes are not promised to match an older stored file, because PDF metadata can differ.
 
 ## Access rules
 
-Unauthenticated requests cannot read business tables or private PDFs. Anonymous grants are revoked.
+Unauthenticated requests cannot read business tables. Anonymous grants are revoked. Any previously stored PDF remains private.
 
 Every policy requires an active profile. A disabled user with an old access token gets no rows.
 
@@ -169,14 +180,14 @@ Active members can read clients, vendors, products, contacts, company presets, a
 | PI visibility: associated | Read a PI only if the user created it, generated a version of it, or is currently assigned as a salesperson. |
 | PI visibility: all | Read every PI. |
 | Create and edit drafts | Create, save, duplicate, delete unissued drafts, and open a revision. |
-| Generate PIs | Issue a number, store the snapshot, and upload that version's PDF. |
+| Generate PIs | Issue a number and store the snapshot. It is not required to download an issued version. |
 | Manage clients / vendors / products | Create and edit those records. Referenced companies and products are archived, not deleted. |
 | View purchase prices | Read and, together with Manage products, write `product_costs`. The catalogue table has no purchase-price column. |
 | Administrator | All of the above, plus Settings and the user function. |
 
 Admins are not a separate bypass hidden in the browser. `private.has_flag` treats an active admin as having every flag, and the user function checks `is_admin` in the database.
 
-Issued numbers, snapshots, totals, and "prepared by" are written only by database functions. The preparer is `auth.uid()` at generation time. Clients can upload a PDF only for a pending version they are allowed to generate, at the exact `{version-id}.pdf` path. Stored PDFs cannot be replaced. The private `pi-pdfs` bucket has no public access and no update policy.
+Issued numbers, snapshots, totals, and "prepared by" are written only by database functions. The preparer is `auth.uid()` at generation time. Issuing a PI does not upload a file and does not wait for storage. The application no longer calls the PDF retry or confirmation functions, and signed-in users can no longer insert or delete objects in `pi-pdfs`. The bucket stays private. A select policy still limits any previously stored file to someone who can read that PI. There is no update policy. Download in the app does not use that file.
 
 ## Cloudflare
 
@@ -196,10 +207,11 @@ After the first deploy, add the production origin and `https://<your-host>/reset
 Free projects can be paused and do not include a self-serve point-in-time backup.
 
 1. **Database.** In the dashboard, use **Database → Backups** if a backup is offered. Otherwise export with the Supabase CLI or `pg_dump` from the connection string in Project Settings → Database. Store the dump outside the project. Restore by creating a new project and loading the dump, then replaying any migrations that are newer than the dump.
-2. **Private PDFs.** Download the `pi-pdfs` bucket with a privileged client, or use the Storage API to list and copy objects to another private bucket or disk. The path is `{version-id}.pdf`. Issued rows in `pi_versions` point at those paths and hold the snapshot needed to understand the file.
-3. **Restore check.** Confirm RLS is still enabled, the `ensure_rls` trigger still exists, and a non-admin cannot read `product_costs` or another user's PI.
+2. **Issued documents.** The rows in `pi_versions`, especially `snapshot`, are what reproduce an issued PI. A PDF file is generated in the browser from that snapshot. Regenerating a PDF is not a database backup: if the snapshot row is lost, current catalogue and company records cannot rebuild it.
+3. **Previously stored PDFs.** Files already in `pi-pdfs` are not required for download. Keep a copy until you deliberately run the cleanup in [docs/cleanup-pi-pdfs.md](docs/cleanup-pi-pdfs.md). That cleanup lists only generated PI PDFs, reports the count and total size, and deletes through the Storage API. It does not delete invoice rows, snapshots, logos, or other buckets.
+4. **Restore check.** Confirm RLS is still enabled, the `ensure_rls` trigger still exists, and a non-admin cannot read `product_costs` or another user's PI.
 
-Keep at least one recent database dump and a copy of `pi-pdfs` together. The snapshot inside `pi_versions` can reproduce the document content if a PDF object is lost, but the application downloads the stored file for an issued version rather than regenerating it from live records.
+Keep at least one recent database dump. A copy of `pi-pdfs` only preserves files created before on-demand PDFs.
 
 ## Limits of this version
 

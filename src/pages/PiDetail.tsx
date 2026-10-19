@@ -1,17 +1,25 @@
-import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
 import { Banner, Button, Card, PageHeader, Select, StatusBadge } from "../components/ui";
-import { downloadStoredPdf } from "../lib/documents";
+import { downloadIssuedPdf } from "../lib/documents";
 import { errorText } from "../lib/errors";
 import { formatDate, formatMoney, formatQuantity, officeLabel } from "../lib/format";
 import { can } from "../lib/permissions";
 import { supabase } from "../lib/supabase";
 import type { PiLine, PiListRow, PiVersion, ProformaInvoice, TrackingStatus } from "../lib/types";
 
+function downloadNoticeFrom(state: unknown): string {
+  if (!state || typeof state !== "object" || !("downloadNotice" in state)) return "";
+  const notice = (state as { downloadNotice?: unknown }).downloadNotice;
+  return typeof notice === "string" ? notice : "";
+}
+
 export function PiDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const downloadNotice = downloadNoticeFrom(location.state);
   const { profile } = useAuth();
   const [pi, setPi] = useState<ProformaInvoice | null>(null);
   const [listRow, setListRow] = useState<PiListRow | null>(null);
@@ -21,6 +29,8 @@ export function PiDetailPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<TrackingStatus>("draft");
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const downloadingRef = useRef<string | null>(null);
 
   async function load(piId: string) {
     const [piResult, listResult, lineResult, versionResult] = await Promise.all([
@@ -67,6 +77,22 @@ export function PiDetailPage() {
     else navigate(`/pis/${id}/edit`);
   }
 
+  async function downloadVersion(version: PiVersion) {
+    if (downloadingRef.current) return;
+    downloadingRef.current = version.id;
+    setDownloadingId(version.id);
+    setError(null);
+    try {
+      await downloadIssuedPdf(version.snapshot);
+    } catch (caught) {
+      const number = version.snapshot?.display_number || version.pi_number;
+      setError(`The PDF for ${number} could not be created. ${errorText(caught)} Choose Download to try again. This does not change the issued version.`);
+    } finally {
+      downloadingRef.current = null;
+      setDownloadingId(null);
+    }
+  }
+
   async function removeDraft() {
     if (!id || !window.confirm("Delete this unissued draft?")) return;
     const { error: deleteError } = await supabase.rpc("delete_unissued_pi", { p_id: id });
@@ -96,6 +122,7 @@ export function PiDetailPage() {
           </>
         }
       />
+      {downloadNotice ? <Banner tone="error">{downloadNotice}</Banner> : null}
       {error ? <Banner tone="error">{error}</Banner> : null}
       {message ? <Banner tone="success">{message}</Banner> : null}
       <Card>
@@ -148,11 +175,10 @@ export function PiDetailPage() {
             {versions.map((version) => (
               <li key={version.id} className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 py-2">
                 <span>
-                  {version.snapshot.display_number} · {formatDate(version.generated_at)} · {version.snapshot.sales.prepared_by} · {formatMoney(version.grand_total, version.snapshot.currency)}
-                  {version.pdf_status === "pending" ? " · PDF not stored" : ""}
+                  {version.snapshot.display_number} · Revision {version.revision} · {formatDate(version.generated_at)} · {version.snapshot.sales?.prepared_by || "—"} · {formatMoney(version.grand_total, version.snapshot.currency)}
                 </span>
-                <Button type="button" onClick={() => void downloadStoredPdf(version).catch((caught) => setError(errorText(caught)))}>
-                  {version.pdf_status === "ready" ? "Download" : "Retry PDF"}
+                <Button type="button" onClick={() => void downloadVersion(version)} disabled={downloadingId !== null}>
+                  {downloadingId === version.id ? "Downloading…" : "Download"}
                 </Button>
               </li>
             ))}

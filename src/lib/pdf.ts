@@ -106,7 +106,7 @@ function header(snapshot: PiSnapshot): Content {
   };
 }
 
-function parties(snapshot: PiSnapshot): Content {
+function parties(snapshot: PiSnapshot, layout: IssuedLayoutVersion): Content {
   const clientLines = [
     snapshot.client.company_name,
     snapshot.client.country,
@@ -125,7 +125,7 @@ function parties(snapshot: PiSnapshot): Content {
 
   return {
     columns: [
-      partyBlock(snapshot.layout_version === "uae-v1" ? "To" : "Client", clientLines),
+      partyBlock(layout === "uae-v1" ? "To" : "Client", clientLines),
       partyBlock("Bill to", [snapshot.bill_to]),
       partyBlock("Ship to", [snapshot.ship_to]),
     ],
@@ -304,9 +304,9 @@ function bank(snapshot: PiSnapshot): Content {
   };
 }
 
-function declaration(snapshot: PiSnapshot): Content {
+function declaration(snapshot: PiSnapshot, layout: IssuedLayoutVersion): Content {
   const base =
-    snapshot.layout_version === "uae-v1"
+    layout === "uae-v1"
       ? "I declare that the above information is true and correct to the best of my knowledge."
       : "I declare that the information mentioned above is true and correct to the best of my knowledge.";
   const lines = [base];
@@ -326,7 +326,50 @@ function declaration(snapshot: PiSnapshot): Content {
   };
 }
 
-export function buildPiDefinition(snapshot: PiSnapshot): TDocumentDefinitions {
+export const ISSUED_LAYOUT_VERSIONS = ["egypt-v1", "uae-v1"] as const;
+
+export type IssuedLayoutVersion = (typeof ISSUED_LAYOUT_VERSIONS)[number];
+
+function isIssuedLayoutVersion(value: string): value is IssuedLayoutVersion {
+  return (ISSUED_LAYOUT_VERSIONS as readonly string[]).includes(value);
+}
+
+function missingSnapshotData(snapshot: PiSnapshot): string[] {
+  const missing: string[] = [];
+  if (!snapshot.display_number) missing.push("PI number");
+  if (!snapshot.currency) missing.push("currency");
+  if (!snapshot.pi_date) missing.push("PI date");
+  if (!snapshot.company) missing.push("company details");
+  if (!snapshot.bank) missing.push("bank details");
+  if (!snapshot.client) missing.push("client details");
+  if (!snapshot.sales) missing.push("salesperson and preparer");
+  if (!Array.isArray(snapshot.lines)) missing.push("line items");
+  if (!snapshot.adjustments || snapshot.adjustments.grand_total == null || snapshot.adjustments.grand_total === "") {
+    missing.push("saved totals");
+  }
+  if (!snapshot.terms) missing.push("terms");
+  return missing;
+}
+
+function assertRenderableSnapshot(snapshot: PiSnapshot): IssuedLayoutVersion {
+  const layout = snapshot?.layout_version ?? "";
+  if (!isIssuedLayoutVersion(layout)) {
+    throw new Error(
+      `This document uses layout version "${layout || "missing"}", which this application cannot render. No other layout was used.`,
+    );
+  }
+  const missing = missingSnapshotData(snapshot);
+  if (missing.length > 0) {
+    throw new Error(
+      `This issued document is missing saved ${missing.join(", ")}. The PDF was not created, and current catalogue or company records were not used.`,
+    );
+  }
+  return layout;
+}
+
+// egypt-v1 and uae-v1 share this builder. A future layout must add a new
+// versioned function and map entry. Do not change this builder for a new design.
+function buildIssuedDocumentV1(snapshot: PiSnapshot, layout: IssuedLayoutVersion): TDocumentDefinitions {
   return {
     pageSize: "A4",
     pageMargins: [32, 28, 32, 42],
@@ -350,13 +393,13 @@ export function buildPiDefinition(snapshot: PiSnapshot): TDocumentDefinitions {
     content: [
       header(snapshot),
       { canvas: [{ type: "line", x1: 0, y1: 0, x2: 531, y2: 0, lineWidth: 1, lineColor: RULE }] },
-      parties(snapshot),
+      parties(snapshot, layout),
       attribution(snapshot),
       itemsTable(snapshot),
       totals(snapshot),
       terms(snapshot),
       bank(snapshot),
-      declaration(snapshot),
+      declaration(snapshot, layout),
     ],
     styles: {
       company: { fontSize: 11, bold: true, color: NAVY },
@@ -366,6 +409,16 @@ export function buildPiDefinition(snapshot: PiSnapshot): TDocumentDefinitions {
       th: { bold: true, fontSize: 8, color: NAVY },
     },
   };
+}
+
+const issuedLayouts: Record<IssuedLayoutVersion, (snapshot: PiSnapshot) => TDocumentDefinitions> = {
+  "egypt-v1": (snapshot) => buildIssuedDocumentV1(snapshot, "egypt-v1"),
+  "uae-v1": (snapshot) => buildIssuedDocumentV1(snapshot, "uae-v1"),
+};
+
+export function buildPiDefinition(snapshot: PiSnapshot): TDocumentDefinitions {
+  const layout = assertRenderableSnapshot(snapshot);
+  return issuedLayouts[layout](snapshot);
 }
 
 export async function renderPiPdf(snapshot: PiSnapshot): Promise<Uint8Array> {
