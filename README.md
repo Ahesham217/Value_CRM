@@ -204,6 +204,26 @@ Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` in the build environ
 
 After the first deploy, add the production origin and `https://<your-host>/reset-password` to the Supabase redirect URLs.
 
+### Branch previews before merging
+
+Cloudflare's `wrangler preview` command requires the top-level `"previews": {}` block included in this repository. Keep the assets settings at the top level; the Vite build supplies the generated assets directory.
+
+For a preview of an unmerged branch, configure that branch's build with:
+- Build command: `npm run build`.
+- Preview/non-production deploy command: `npx wrangler preview`.
+- Build variables: `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`.
+
+Keep the production branch as `main` and its deploy command as `npx wrangler deploy`. A preview build must run the Vite build before Wrangler; a deploy-only run will not produce the generated configuration and assets.
+
+The local equivalent is:
+
+```bash
+npm run build
+npx wrangler preview
+```
+
+A preview using the same Supabase URL shares the live database. Data edits are real; the preview isolates the frontend, not the external database. Add the preview origin and its `/reset-password` URL to Supabase's redirect allowlist if using invitation or password-reset links there.
+
 ## Backup and restore on Supabase Free
 
 Free projects can be paused and do not include a self-serve point-in-time backup.
