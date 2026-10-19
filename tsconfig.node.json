@@ -15,5 +15,5 @@
     "noUnusedParameters": true,
     "types": ["node"]
   },
-  "include": ["vite.config.ts", "vitest.config.ts", "worker", "worker-configuration.d.ts"]
+  "include": ["vite.config.ts", "vitest.config.ts", "worker", "worker-configuration.d.ts", "scripts/pi-pdf-cleanup.ts"]
 }

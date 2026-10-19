@@ -1,6 +1,6 @@
 import { PDFParse } from "pdf-parse";
 import { describe, expect, it } from "vitest";
-import { renderPiPdf } from "./pdf";
+import { buildPiDefinition, pdfFilename, renderPiPdf } from "./pdf";
 import type { PiSnapshot } from "./types";
 
 function snapshot(overrides: Partial<PiSnapshot> = {}): PiSnapshot {
@@ -116,6 +116,10 @@ describe("PI pdf", () => {
     expect(text).toContain("100022610548");
     expect(text).toContain("Hana Saleh");
     expect(text).toContain("Karim Nabil");
+    expect(text).toContain("EGP 200.00");
+    expect(text).toContain("Client");
+    expect(text).toContain("the information mentioned above");
+    expect(text).not.toContain("the above information is true");
     expect(text).toContain("The price does not include VAT.");
     expect(text).not.toContain("Omar Internal");
     expect(text).not.toContain("purchase");
@@ -176,6 +180,8 @@ describe("PI pdf", () => {
         }),
       ),
     );
+    expect(usd.text).toContain("the above information is true");
+    expect(usd.text).not.toContain("the information mentioned above");
     expect(usd.text).toContain("Ras Al Khaimah");
     expect(usd.text).toContain("AE690070100001000081724");
     expect(usd.text).toContain("ARAIAEADXXX");
@@ -379,5 +385,111 @@ describe("PI pdf", () => {
     expect(text.indexOf("M-2")).toBeLessThan(text.indexOf("M-28"));
     expect(text.match(/Description/g)?.length).toBeGreaterThan(1);
     expect(text).toContain("EG590010007200000100022610548");
+  });
+
+  it("keeps saved line order, revision filename, and the saved logo", async () => {
+    const pngLogo = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const jpegLogo = Buffer.from(
+      "ffd8ffe000104a46494600010100000100010000ffdb004300080606070605080707070909080a0c140d0c0b0b0c1912130f141d1a1f1e1d1a1c1c20242e2720222c231c1c2837292c30313434341f27393d38323c2e333432ffc0000b080001000101011100ffc4001f0000010501010101010100000000000000000102030405060708090a0bffc400b5100002010303020403050504040000017d01020300041105122131410613516107227114328191a1082342b1c11552d1f02433627282090a161718191a25262728292a3435363738393a434445464748494a535455565758595a636465666768696a737475767778797a838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad3d4d5d6d7d8d9dae1e2e3e4e5e6e7e8e9eaf1f2f3f4f5f6f7f8f9faffda000c03010002110311003f00f7fa28a2803f00ffd9",
+      "hex",
+    ).toString("base64");
+    const currentLogo = "CURRENT-LOGO-NOT-IN-THE-SNAPSHOT";
+    const pngDocument = JSON.stringify(buildPiDefinition(snapshot({
+      company: {
+        name: "Saved company",
+        address: "Saved address",
+        phone: "",
+        fax: "",
+        email: "",
+        website: "",
+        tax_registration: "",
+        logo_base64: pngLogo,
+        logo_content_type: "image/png",
+      },
+    })));
+    expect(pngDocument).toContain(`data:image/png;base64,${pngLogo}`);
+    expect(pngDocument).not.toContain(currentLogo);
+    const issued = snapshot({
+      display_number: "AE-2026-00008-R1",
+      pi_number: "AE-2026-00008",
+      revision: 1,
+      revision_label: "R1",
+      lines: [
+        {
+          model_code: "FIRST-MODEL",
+          description: "Saved first line",
+          unit: "unit",
+          quantity: "1",
+          unit_price: "10.00",
+          line_total: "10.00",
+        },
+        {
+          model_code: "SECOND-MODEL",
+          description: "Saved second line",
+          unit: "unit",
+          quantity: "1",
+          unit_price: "5.00",
+          line_total: "5.00",
+        },
+      ],
+      company: {
+        name: "Saved company",
+        address: "Saved address",
+        phone: "",
+        fax: "",
+        email: "",
+        website: "",
+        tax_registration: "",
+        logo_base64: jpegLogo,
+        logo_content_type: "image/jpeg",
+      },
+    });
+    expect(pdfFilename(issued)).toBe("AE-2026-00008-R1.pdf");
+    const definition = JSON.stringify(buildPiDefinition(issued));
+    expect(definition).toContain(`data:image/jpeg;base64,${jpegLogo}`);
+    expect(definition).not.toContain(currentLogo);
+    const bytes = await renderPiPdf(issued);
+    expect(Buffer.from(bytes).includes(Buffer.from(jpegLogo, "base64"))).toBe(true);
+    const { text } = await textOf(bytes);
+    expect(text.indexOf("FIRST-MODEL")).toBeGreaterThanOrEqual(0);
+    expect(text.indexOf("FIRST-MODEL")).toBeLessThan(text.indexOf("SECOND-MODEL"));
+    expect(text).toContain("AE-2026-00008-R1");
+    expect(text).toContain("Saved company");
+  });
+
+  it("renders only the saved snapshot when current records differ", async () => {
+    const currentRecords = {
+      company: "Current Company Ltd",
+      client: "Current Client",
+      bank: "Current Bank",
+      salesperson: "Current Seller",
+      preparer: "Current Preparer",
+      model: "CURRENT-MODEL",
+      description: "Current catalogue description",
+    };
+    const { text } = await textOf(await renderPiPdf(snapshot()));
+    expect(text).toContain("Nile Works");
+    expect(text).toContain("Commercial International Bank (CIB)");
+    expect(text).toContain("Hana Saleh");
+    expect(text).toContain("Karim Nabil");
+    expect(text).toContain("VT-1");
+    expect(text).toContain("Controller");
+    for (const value of Object.values(currentRecords)) {
+      expect(text).not.toContain(value);
+    }
+  });
+
+  it("rejects an unsupported layout instead of using another one", async () => {
+    const issued = snapshot({ layout_version: "egypt-v2" as PiSnapshot["layout_version"] });
+    await expect(renderPiPdf(issued)).rejects.toThrow(/layout version "egypt-v2"/);
+    await expect(renderPiPdf(issued)).rejects.toThrow(/No other layout was used/);
+    await expect(renderPiPdf(issued)).rejects.toThrow(/cannot render/);
+  });
+
+  it("reports a snapshot that is missing saved rendering data", async () => {
+    const issued = snapshot();
+    const broken = { ...issued, company: undefined } as unknown as PiSnapshot;
+    await expect(renderPiPdf(broken)).rejects.toThrow(/company details/);
+    await expect(renderPiPdf(broken)).rejects.toThrow(/current catalogue or company records were not used/);
   });
 });

@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
 import { PiItemSection } from "../components/PiItemSection";
 import { Banner, Button, Card, Field, PageHeader, Select, TextArea, controlClass } from "../components/ui";
 import { toCatalogueProduct } from "../lib/catalogue";
-import { generateAndDownload, previewDraftPdf, saveDraft } from "../lib/documents";
+import { generateAndDownload, isIssuedDownloadError, previewDraftPdf, saveDraft } from "../lib/documents";
 import { errorText, isConflict } from "../lib/errors";
 import { formatMoney } from "../lib/format";
 import { calculateDocument } from "../lib/money";
@@ -46,6 +46,8 @@ export function PiEditorPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [conflict, setConflict] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const acting = useRef(false);
   const [draftVersion, setDraftVersion] = useState(1);
   const [piNumber, setPiNumber] = useState<string | null>(null);
   const [draftOpen, setDraftOpen] = useState(true);
@@ -356,27 +358,51 @@ export function PiEditorPage() {
     }
   }
 
-  async function onGenerate() {
-    if (!id) return;
-    const blocked = generationBlock(lines);
-    if (blocked) {
-      setMessage(null);
-      setError(blocked);
-      return;
-    }
+  async function onPreview() {
+    if (acting.current) return;
     const body = preparedPayload();
     if (!body) return;
-    if (!window.confirm(piNumber ? "Issue the next revision of this PI? The previous version stays unchanged." : "Issue this PI? It will receive a permanent number.")) return;
-    setBusy(true);
+    acting.current = true;
+    setPreviewing(true);
     setError(null);
     try {
-      await generateAndDownload(id, draftVersion, body);
-      navigate(`/pis/${id}`);
+      await previewDraftPdf(previewSnapshot());
     } catch (caught) {
-      setConflict(isConflict(caught));
       setError(errorText(caught));
-      if (!isConflict(caught) && errorText(caught).includes("was issued")) navigate(`/pis/${id}`);
     } finally {
+      acting.current = false;
+      setPreviewing(false);
+    }
+  }
+
+  async function onGenerate() {
+    if (!id || acting.current) return;
+    acting.current = true;
+    try {
+      const blocked = generationBlock(lines);
+      if (blocked) {
+        setMessage(null);
+        setError(blocked);
+        return;
+      }
+      const body = preparedPayload();
+      if (!body) return;
+      if (!window.confirm(piNumber ? "Issue the next revision of this PI? The previous version stays unchanged." : "Issue this PI? It will receive a permanent number.")) return;
+      setBusy(true);
+      setError(null);
+      try {
+        await generateAndDownload(id, draftVersion, body);
+        navigate(`/pis/${id}`);
+      } catch (caught) {
+        setConflict(isConflict(caught));
+        if (isIssuedDownloadError(caught)) {
+          navigate(`/pis/${id}`, { state: { downloadNotice: errorText(caught) } });
+          return;
+        }
+        setError(errorText(caught));
+      }
+    } finally {
+      acting.current = false;
       setBusy(false);
     }
   }
@@ -415,13 +441,9 @@ export function PiEditorPage() {
         actions={
           <>
             <Link to={`/pis/${id}`}><Button type="button" variant="secondary">View</Button></Link>
-            {canEdit ? <Button type="button" onClick={() => void onSave()} disabled={busy}>Save draft</Button> : null}
-            <Button type="button" onClick={() => {
-              const body = preparedPayload();
-              if (!body) return;
-              try { void previewDraftPdf(previewSnapshot()); } catch (caught) { setError(errorText(caught)); }
-            }} disabled={busy}>Preview</Button>
-            {canGenerate ? <Button type="button" variant="primary" onClick={() => void onGenerate()} disabled={busy}>{busy ? "Working…" : "Generate & Download"}</Button> : null}
+            {canEdit ? <Button type="button" onClick={() => void onSave()} disabled={busy || previewing}>Save draft</Button> : null}
+            <Button type="button" onClick={() => void onPreview()} disabled={busy || previewing}>{previewing ? "Preparing preview…" : "Preview"}</Button>
+            {canGenerate ? <Button type="button" variant="primary" onClick={() => void onGenerate()} disabled={busy || previewing}>{busy ? "Working…" : "Generate & Download"}</Button> : null}
           </>
         }
       />

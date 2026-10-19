@@ -305,7 +305,7 @@ export type PiVersion = {
   generated_by: string;
   generated_at: string;
   snapshot: PiSnapshot;
-  pdf_status: "pending" | "ready";
+  pdf_status: "pending" | "ready" | "issued";
   pdf_path: string | null;
   layout_version: string;
   grand_total: string;
@@ -358,7 +358,6 @@ export type GenerateResult = {
   revision: number;
   pi_number: string;
   display_number: string;
-  pdf_path: string;
   snapshot: PiSnapshot;
 };
 
