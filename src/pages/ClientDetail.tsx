@@ -1,13 +1,14 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
-import { Banner, Button, Card, Field, PageHeader, TextArea, controlClass } from "../components/ui";
+import { Banner, Button, Disclosure, Field, Menu, PageHeader, TextArea, buttonClass, controlClass } from "../components/ui";
 import { errorText } from "../lib/errors";
 import { displayNumber, formatDate, formatMoney } from "../lib/format";
 import { can } from "../lib/permissions";
 import { archiveRow } from "../lib/records";
 import { supabase } from "../lib/supabase";
 import type { Client, ClientContact, PiListRow } from "../lib/types";
+import { recordOptionalSummary } from "../lib/workspace-view";
 
 type ContactDraft = {
   key: string;
@@ -37,6 +38,9 @@ export function ClientDetailPage() {
   const [notes, setNotes] = useState("");
   const [archivedAt, setArchivedAt] = useState<string | null>(null);
   const [contacts, setContacts] = useState<ContactDraft[]>([emptyContact()]);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [contactsOpen, setContactsOpen] = useState(false);
+  const [relatedOpen, setRelatedOpen] = useState(false);
   const [related, setRelated] = useState<PiListRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -172,15 +176,45 @@ export function ClientDetailPage() {
 
   if (loading) return <p className="text-sm text-slate-600">Loading client…</p>;
 
+  const primaryIndex = Math.max(contacts.findIndex((contact) => contact.is_primary), 0);
+  const featured = contacts[primaryIndex] ?? emptyContact();
+  const additional = contacts.filter((contact) => contact.key !== featured.key);
+  const additionalSummary = additional.map((contact) => contact.name.trim()).filter(Boolean).join(", ") || null;
+  const detailSummary = recordOptionalSummary([
+    { label: "Shipping", value: shipping },
+    { label: "Tax number", value: taxNumber },
+    { label: "Notes", value: notes },
+  ]);
+
+  function contactFields(contact: ContactDraft) {
+    return (
+      <div className="grid gap-2 sm:grid-cols-2">
+        <Field label="Name"><input className={controlClass} value={contact.name} disabled={!manage} onChange={(event) => updateContact(contact.key, { name: event.target.value })} /></Field>
+        <Field label="Job title"><input className={controlClass} value={contact.job_title} disabled={!manage} onChange={(event) => updateContact(contact.key, { job_title: event.target.value })} /></Field>
+        <Field label="Phone"><input className={controlClass} value={contact.phone} disabled={!manage} onChange={(event) => updateContact(contact.key, { phone: event.target.value })} /></Field>
+        <Field label="Email"><input className={controlClass} type="email" value={contact.email} disabled={!manage} onChange={(event) => updateContact(contact.key, { email: event.target.value })} /></Field>
+        <label className="flex items-center gap-2 text-sm sm:col-span-2">
+          <input type="radio" name="primary-contact" checked={contact.is_primary} disabled={!manage} onChange={() => updateContact(contact.key, { is_primary: true })} />
+          Primary contact
+        </label>
+      </div>
+    );
+  }
+
   return (
-    <form onSubmit={onSubmit} className="space-y-4">
+    <form onSubmit={onSubmit} className="space-y-3">
       <PageHeader
         title={isNew ? "New client" : companyName || "Client"}
-        subtitle={archivedAt ? "Archived clients stay on historical invoices." : "Company details and contacts."}
+        subtitle={archivedAt ? "Archived clients stay on historical invoices." : undefined}
         actions={
           <>
-            <Link to="/clients"><Button type="button" variant="secondary">Back</Button></Link>
-            {!isNew && manage ? <Button type="button" variant="danger" onClick={() => void toggleArchive()}>{archivedAt ? "Restore" : "Archive"}</Button> : null}
+            <Link to="/clients" className={buttonClass("secondary")}>Back</Link>
+            {!isNew && manage ? (
+              <Menu
+                label="More"
+                items={[{ label: archivedAt ? "Restore" : "Archive", onSelect: () => void toggleArchive(), tone: "danger" }]}
+              />
+            ) : null}
             {manage ? <Button type="submit" variant="primary" disabled={saving}>{saving ? "Saving…" : "Save"}</Button> : null}
           </>
         }
@@ -188,67 +222,99 @@ export function ClientDetailPage() {
       {error ? <Banner tone="error">{error}</Banner> : null}
       {message ? <Banner tone="success">{message}</Banner> : null}
       {!manage ? <Banner tone="info">You can view this client. An administrator has not given you permission to change clients.</Banner> : null}
-      <Card>
-        <div className="grid gap-3 md:grid-cols-2">
+      <section className="rounded-[10px] border border-line bg-white p-6">
+        <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Company name">
             <input className={controlClass} required value={companyName} disabled={!manage} onChange={(event) => setCompanyName(event.target.value)} />
           </Field>
           <Field label="Country">
             <input className={controlClass} value={country} disabled={!manage} onChange={(event) => setCountry(event.target.value)} />
           </Field>
-          <Field label="Tax number">
-            <input className={controlClass} value={taxNumber} disabled={!manage} onChange={(event) => setTaxNumber(event.target.value)} />
-          </Field>
         </div>
-        <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <div className="mt-3">
+          <h2 className="mb-2 text-sm font-semibold text-navy-950">Primary contact</h2>
+          {contactFields(featured)}
+          {manage && contacts.length > 1 ? (
+            <Button
+              className="mt-2"
+              type="button"
+              variant="ghost"
+              onClick={() => setContacts((current) => {
+                const next = current.filter((item) => item.key !== featured.key);
+                return next.length ? next : [emptyContact()];
+              })}
+            >
+              Remove
+            </Button>
+          ) : null}
+          {manage ? (
+            <Button
+              className="mt-2"
+              type="button"
+              onClick={() => {
+                setContactsOpen(true);
+                setContacts((current) => [...current, emptyContact()]);
+              }}
+            >
+              Add contact
+            </Button>
+          ) : null}
+        </div>
+        <div className="mt-3">
           <Field label="Billing address">
             <TextArea value={billing} disabled={!manage} onChange={(event) => setBilling(event.target.value)} />
           </Field>
-          <Field label="Shipping address" hint="Optional. A PI can still copy billing at the time it is prepared.">
-            <TextArea value={shipping} disabled={!manage} onChange={(event) => setShipping(event.target.value)} />
-          </Field>
         </div>
-        <div className="mt-3">
-          <Field label="Notes">
-            <TextArea value={notes} disabled={!manage} onChange={(event) => setNotes(event.target.value)} />
-          </Field>
-        </div>
-      </Card>
-      <Card>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-semibold text-navy-950">Contacts</h2>
-          {manage ? <Button type="button" onClick={() => setContacts((current) => [...current, emptyContact()])}>Add contact</Button> : null}
-        </div>
-        <div className="space-y-3">
-          {contacts.map((contact) => (
-            <div key={contact.key} className="grid gap-2 rounded-md border border-slate-200 p-3 md:grid-cols-4">
-              <Field label="Name"><input className={controlClass} value={contact.name} disabled={!manage} onChange={(event) => updateContact(contact.key, { name: event.target.value })} /></Field>
-              <Field label="Job title"><input className={controlClass} value={contact.job_title} disabled={!manage} onChange={(event) => updateContact(contact.key, { job_title: event.target.value })} /></Field>
-              <Field label="Phone"><input className={controlClass} value={contact.phone} disabled={!manage} onChange={(event) => updateContact(contact.key, { phone: event.target.value })} /></Field>
-              <Field label="Email"><input className={controlClass} type="email" value={contact.email} disabled={!manage} onChange={(event) => updateContact(contact.key, { email: event.target.value })} /></Field>
-              <label className="flex items-center gap-2 text-sm md:col-span-3">
-                <input type="radio" name="primary-contact" checked={contact.is_primary} disabled={!manage} onChange={() => updateContact(contact.key, { is_primary: true })} />
-                Primary contact
-              </label>
-              {manage ? <Button type="button" variant="ghost" onClick={() => setContacts((current) => current.filter((item) => item.key !== contact.key))}>Remove</Button> : null}
-            </div>
-          ))}
-        </div>
-      </Card>
-      {!isNew ? (
-        <Card>
-          <h2 className="mb-3 font-semibold text-navy-950">Related PIs</h2>
-          {related.length === 0 ? <p className="text-sm text-slate-600">No proforma invoices for this client are visible to you.</p> : (
-            <ul className="space-y-2 text-sm">
-              {related.map((pi) => (
-                <li key={pi.id}>
-                  <Link className="font-medium text-navy-800 underline" to={`/pis/${pi.id}`}>{displayNumber(pi.pi_number, pi.latest_revision)}</Link>
-                  <span className="text-slate-600"> · {formatDate(pi.pi_date)} · {formatMoney(pi.display_total, pi.currency)}</span>
-                </li>
+        <Disclosure title="More client details" summary={detailSummary} open={detailsOpen} onToggle={() => setDetailsOpen((current) => !current)}>
+          <div className="grid gap-3">
+            <Field label="Shipping address" hint="Optional. A PI can still use its own shipping address.">
+              <TextArea value={shipping} disabled={!manage} onChange={(event) => setShipping(event.target.value)} />
+            </Field>
+            <Field label="Tax number">
+              <input className={controlClass} value={taxNumber} disabled={!manage} onChange={(event) => setTaxNumber(event.target.value)} />
+            </Field>
+            <Field label="Notes">
+              <TextArea value={notes} disabled={!manage} onChange={(event) => setNotes(event.target.value)} />
+            </Field>
+          </div>
+        </Disclosure>
+        <Disclosure title="Additional contacts" summary={additionalSummary} open={contactsOpen} onToggle={() => setContactsOpen((current) => !current)}>
+          {additional.length === 0 ? <p className="text-sm text-slate-600">No additional contacts.</p> : (
+            <div className="space-y-3">
+              {additional.map((contact) => (
+                <div key={contact.key} className="rounded-lg border border-line p-3">
+                  {contactFields(contact)}
+                  {manage ? (
+                    <Button className="mt-2" type="button" variant="ghost" onClick={() => setContacts((current) => current.filter((item) => item.key !== contact.key))}>
+                      Remove
+                    </Button>
+                  ) : null}
+                </div>
               ))}
-            </ul>
+            </div>
           )}
-        </Card>
+        </Disclosure>
+      </section>
+      {!isNew ? (
+        <section className="rounded-[10px] border border-line bg-white px-6">
+          <Disclosure
+            title="Related PIs"
+            summary={related.length === 0 ? "None visible to you" : `${related.length} PI${related.length === 1 ? "" : "s"}`}
+            open={relatedOpen}
+            onToggle={() => setRelatedOpen((current) => !current)}
+          >
+            {related.length === 0 ? <p className="text-sm text-slate-600">No proforma invoices for this client are visible to you.</p> : (
+              <ul className="space-y-1 text-sm">
+                {related.map((pi) => (
+                  <li key={pi.id}>
+                    <Link className="font-medium text-navy-800 underline" to={`/pis/${pi.id}`}>{displayNumber(pi.pi_number, pi.latest_revision)}</Link>
+                    <span className="text-slate-600"> · {formatDate(pi.pi_date)} · {formatMoney(pi.display_total, pi.currency)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Disclosure>
+        </section>
       ) : null}
     </form>
   );

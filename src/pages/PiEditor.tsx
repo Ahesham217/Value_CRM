@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
+import { ClientCombobox } from "../components/ClientCombobox";
 import { PiItemSection } from "../components/PiItemSection";
-import { Banner, Button, Card, Field, PageHeader, Select, TextArea, controlClass } from "../components/ui";
+import { Banner, Button, Disclosure, Field, Select, TextArea, buttonClass, controlClass } from "../components/ui";
 import { toCatalogueProduct } from "../lib/catalogue";
 import { generateAndDownload, isIssuedDownloadError, previewDraftPdf, saveDraft } from "../lib/documents";
 import { errorText, isConflict } from "../lib/errors";
@@ -28,6 +29,18 @@ import {
   type Profile,
   type ProformaInvoice,
 } from "../lib/types";
+import {
+  additionalSalesSummary,
+  adjustmentRows,
+  billingSummary,
+  clientOptionalSummary,
+  contactLine,
+  editorFingerprint,
+  moneyLabel,
+  recordOptionalSummary,
+  taxExclusionNotes,
+  type AdjustmentKey,
+} from "../lib/workspace-view";
 
 function moneyOrNull(value: string, enabled: boolean): string | null {
   if (!enabled) return null;
@@ -45,9 +58,12 @@ export function PiEditorPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [conflict, setConflict] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<"save" | "generate" | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const acting = useRef(false);
+  const captureBaseline = useRef(false);
+  const [baseline, setBaseline] = useState<string | null>(null);
+  const [savedNotice, setSavedNotice] = useState(false);
   const [draftVersion, setDraftVersion] = useState(1);
   const [piNumber, setPiNumber] = useState<string | null>(null);
   const [draftOpen, setDraftOpen] = useState(true);
@@ -57,13 +73,18 @@ export function PiEditorPage() {
   const [expiryDate, setExpiryDate] = useState("");
   const [clientId, setClientId] = useState("");
   const [clientQuery, setClientQuery] = useState("");
-  const [clients, setClients] = useState<Client[]>([]);
+  const [clientRecord, setClientRecord] = useState<Client | null>(null);
   const [contacts, setContacts] = useState<ClientContact[]>([]);
   const [contactId, setContactId] = useState("");
   const [billTo, setBillTo] = useState("");
   const [shipTo, setShipTo] = useState("");
   const [shipSame, setShipSame] = useState(true);
   const [reference, setReference] = useState("");
+  const [editingClient, setEditingClient] = useState(false);
+  const [clientDetailsOpen, setClientDetailsOpen] = useState(false);
+  const [salesOpen, setSalesOpen] = useState(false);
+  const [adjustmentsOpen, setAdjustmentsOpen] = useState(false);
+  const [termsOpen, setTermsOpen] = useState(false);
   const [salespeople, setSalespeople] = useState<Profile[]>([]);
   const [selectedSales, setSelectedSales] = useState<string[]>([]);
   const [leadId, setLeadId] = useState("");
@@ -153,32 +174,30 @@ export function PiEditorPage() {
         vendor_archived: product.vendor_archived,
       } : null);
     }));
-    setReady(true);
     setPresets((presetResult.data ?? []) as CompanyPreset[]);
     setSalespeople((peopleResult.data ?? []) as Profile[]);
     if (pi.client_id) {
       const clientResult = await supabase.from("clients").select("*").eq("id", pi.client_id).maybeSingle();
-      if (clientResult.data) setClients([clientResult.data as Client]);
+      if (clientResult.data) {
+        const client = clientResult.data as Client;
+        setClientRecord(client);
+        setClientQuery(client.company_name);
+      }
       const contactResult = await supabase.from("client_contacts").select("*").eq("client_id", pi.client_id).order("position");
       setContacts((contactResult.data ?? []) as ClientContact[]);
+    } else {
+      setClientRecord(null);
+      setClientQuery("");
+      setContacts([]);
     }
+    setReady(true);
+    captureBaseline.current = true;
   }
 
   useEffect(() => {
     if (!id) return;
     load(id).catch((caught) => setError(errorText(caught))).finally(() => setLoading(false));
   }, [id]);
-
-  useEffect(() => {
-    const term = clientQuery.trim();
-    if (term.length < 2) return;
-    const handle = setTimeout(() => {
-      void supabase.from("clients").select("*").is("archived_at", null).ilike("company_name", `%${term.replace(/[%_]/g, "")}%`).limit(20).then(({ data }) => {
-        setClients((data ?? []) as Client[]);
-      });
-    }, 200);
-    return () => clearTimeout(handle);
-  }, [clientQuery]);
 
   const totals = useMemo(() => {
     try {
@@ -204,6 +223,57 @@ export function PiEditorPage() {
       return { error: errorText(caught), value: null };
     }
   }, [bankCharge, bankOn, discountType, discountValue, installation, installationOn, lines, shipping, shippingOn, taxEnabled, taxExcludesBank, taxExcludesInstallation, taxExcludesShipping, taxPercent]);
+
+  const fingerprint = useMemo(() => editorFingerprint({
+    presetCode,
+    piDate,
+    expiryDate,
+    clientId,
+    contactId,
+    billTo,
+    shipTo,
+    shipSame,
+    reference,
+    leadId,
+    salespersonIds: selectedSales,
+    lines: lines.map((line) => ({
+      productId: line.product?.id ?? "",
+      model: line.modelInput,
+      description: line.description,
+      unit: line.unit,
+      quantity: line.quantity,
+      unitPrice: line.unitPrice,
+    })),
+    discountType,
+    discountValue,
+    shippingOn,
+    shipping,
+    installationOn,
+    installation,
+    bankOn,
+    bankCharge,
+    taxEnabled,
+    taxPercent,
+    taxExcludesShipping,
+    taxExcludesInstallation,
+    taxExcludesBank,
+    priceBasis,
+    paymentTerms,
+    deliveryTerms,
+    warranty,
+    notes,
+  }), [
+    bankCharge, bankOn, billTo, clientId, contactId, deliveryTerms, discountType, discountValue, expiryDate,
+    installation, installationOn, leadId, lines, notes, paymentTerms, piDate, presetCode, priceBasis, reference,
+    selectedSales, shipSame, shipTo, shipping, shippingOn, taxEnabled, taxExcludesBank, taxExcludesInstallation,
+    taxExcludesShipping, taxPercent, warranty,
+  ]);
+
+  useEffect(() => {
+    if (!ready || !captureBaseline.current) return;
+    captureBaseline.current = false;
+    setBaseline(fingerprint);
+  }, [fingerprint, ready]);
 
   function payload(draftLines: DraftLineInput[]): DraftPayload {
     return {
@@ -252,7 +322,6 @@ export function PiEditorPage() {
     if (!preset || !currency) throw new Error("Choose an office and currency preset before previewing.");
     if (!totals.value) throw new Error(totals.error ?? "Correct the totals before previewing.");
     const lead = salespeople.find((person) => person.id === leadId);
-    const client = clients.find((item) => item.id === clientId);
     const contact = contacts.find((item) => item.id === contactId);
     const calculated = totals.value;
     return {
@@ -290,9 +359,9 @@ export function PiEditorPage() {
         notes: preset.bank_notes,
       },
       client: {
-        company_name: client?.company_name ?? "",
-        country: client?.country ?? "",
-        tax_number: client?.tax_number ?? "",
+        company_name: clientRecord?.company_name ?? "",
+        country: clientRecord?.country ?? "",
+        tax_number: clientRecord?.tax_number ?? "",
         contact_name: contact?.name ?? "",
         contact_job_title: contact?.job_title ?? "",
         contact_phone: contact?.phone ?? "",
@@ -340,21 +409,26 @@ export function PiEditorPage() {
   }
 
   async function onSave() {
-    if (!id) return;
+    if (!id || acting.current) return;
     const body = preparedPayload();
     if (!body) return;
-    setBusy(true);
+    acting.current = true;
+    setBusy("save");
     setError(null);
     setConflict(false);
     try {
       const result = await saveDraft(id, draftVersion, body);
       setDraftVersion(result.draft_version);
-      setMessage("Draft saved.");
+      setBaseline(fingerprint);
+      setSavedNotice(true);
+      setMessage(null);
     } catch (caught) {
+      setMessage(null);
       setConflict(isConflict(caught));
       setError(errorText(caught));
     } finally {
-      setBusy(false);
+      acting.current = false;
+      setBusy(null);
     }
   }
 
@@ -368,6 +442,7 @@ export function PiEditorPage() {
     try {
       await previewDraftPdf(previewSnapshot());
     } catch (caught) {
+      setMessage(null);
       setError(errorText(caught));
     } finally {
       acting.current = false;
@@ -388,12 +463,13 @@ export function PiEditorPage() {
       const body = preparedPayload();
       if (!body) return;
       if (!window.confirm(piNumber ? "Issue the next revision of this PI? The previous version stays unchanged." : "Issue this PI? It will receive a permanent number.")) return;
-      setBusy(true);
+      setBusy("generate");
       setError(null);
       try {
         await generateAndDownload(id, draftVersion, body);
         navigate(`/pis/${id}`);
       } catch (caught) {
+        setMessage(null);
         setConflict(isConflict(caught));
         if (isIssuedDownloadError(caught)) {
           navigate(`/pis/${id}`, { state: { downloadNotice: errorText(caught) } });
@@ -403,23 +479,46 @@ export function PiEditorPage() {
       }
     } finally {
       acting.current = false;
-      setBusy(false);
+      setBusy(null);
     }
   }
 
-  async function chooseClient(nextId: string) {
-    setClientId(nextId);
+  async function chooseClient(client: Client) {
+    const sameClient = client.id === clientId;
+    setClientRecord(client);
+    setClientId(client.id);
+    setClientQuery(client.company_name);
+    if (sameClient) return;
     setContactId("");
-    const client = clients.find((item) => item.id === nextId);
-    if (client) {
-      setBillTo(client.billing_address);
-      if (shipSame) setShipTo(client.billing_address);
-    }
-    const { data } = await supabase.from("client_contacts").select("*").eq("client_id", nextId).order("position");
+    setBillTo(client.billing_address);
+    if (shipSame) setShipTo(client.billing_address);
+    const { data } = await supabase.from("client_contacts").select("*").eq("client_id", client.id).order("position");
     const loaded = (data ?? []) as ClientContact[];
     setContacts(loaded);
     const primary = loaded.find((contact) => contact.is_primary);
     if (primary) setContactId(primary.id);
+  }
+
+  function clearClient() {
+    setClientRecord(null);
+    setClientId("");
+    setClientQuery("");
+    setContactId("");
+    setContacts([]);
+  }
+
+  function chooseLead(nextId: string) {
+    setLeadId(nextId);
+    if (!nextId) return;
+    setSelectedSales((current) => (current.includes(nextId) ? current : [...current, nextId]));
+  }
+
+  function removeAdjustment(key: AdjustmentKey) {
+    if (key === "discount") setDiscountType("none");
+    if (key === "shipping") setShippingOn(false);
+    if (key === "installation") setInstallationOn(false);
+    if (key === "bank") setBankOn(false);
+    if (key === "tax") setTaxEnabled(false);
   }
 
   if (loading) return <p className="text-sm text-slate-600">Loading draft…</p>;
@@ -428,85 +527,260 @@ export function PiEditorPage() {
     return (
       <div className="space-y-3">
         <Banner tone="info">This PI is issued. Create a revision before editing it.</Banner>
-        <Link to={`/pis/${id}`}><Button>Open PI</Button></Link>
+        <Link to={`/pis/${id}`} className={buttonClass("secondary")}>Open PI</Link>
       </div>
     );
   }
 
+  const assignable = salespeople.filter((person) => person.is_active || selectedSales.includes(person.id) || person.id === leadId);
+  const additionalNames = assignable
+    .filter((person) => person.id !== leadId && selectedSales.includes(person.id))
+    .map((person) => person.full_name);
+  const salesSummary = additionalSalesSummary(additionalNames);
+  const selectedContact = contacts.find((contact) => contact.id === contactId) ?? null;
+  const clientSummary = clientOptionalSummary({ shipSame, reference });
+  const termsSummary = recordOptionalSummary([
+    { label: "Price basis", value: priceBasis },
+    { label: "Warranty", value: warranty },
+    { label: "Notes", value: notes },
+  ]);
+  const rows = adjustmentRows({
+    currency,
+    discountType,
+    discountValue,
+    discountAmount: totals.value?.discountAmount ?? null,
+    shippingOn,
+    shipping,
+    installationOn,
+    installation,
+    bankOn,
+    bankCharge,
+    taxEnabled,
+    taxPercent,
+    taxAmount: totals.value?.taxAmount ?? null,
+  });
+  const exclusionNotes = taxExclusionNotes({
+    taxEnabled,
+    shippingOn,
+    installationOn,
+    bankOn,
+    taxExcludesShipping,
+    taxExcludesInstallation,
+    taxExcludesBank,
+  });
+  const unpriced = lines.filter((line) => !isBlankPlaceholder(line) && line.unitPrice.trim() === "").length;
+  const working = busy !== null || previewing;
+  const dirty = baseline !== null && fingerprint !== baseline;
+  const saveStatus = dirty ? "Unsaved changes" : savedNotice ? "Draft saved" : "";
+
   return (
-    <div className="space-y-4">
-      <PageHeader
-        title={piNumber ? `Edit ${piNumber}` : "New proforma invoice"}
-        subtitle="Prepared by is recorded automatically when you generate. Totals below are confirmed by the database when you save."
-        actions={
-          <>
-            <Link to={`/pis/${id}`}><Button type="button" variant="secondary">View</Button></Link>
-            {canEdit ? <Button type="button" onClick={() => void onSave()} disabled={busy || previewing}>Save draft</Button> : null}
-            <Button type="button" onClick={() => void onPreview()} disabled={busy || previewing}>{previewing ? "Preparing preview…" : "Preview"}</Button>
-            {canGenerate ? <Button type="button" variant="primary" onClick={() => void onGenerate()} disabled={busy || previewing}>{busy ? "Working…" : "Generate & Download"}</Button> : null}
-          </>
-        }
-      />
-      {error ? <Banner tone="error">{error} {conflict && id ? <button type="button" className="ml-2 underline" onClick={() => { setLoading(true); void load(id).finally(() => setLoading(false)); }}>Reload draft</button> : null}</Banner> : null}
-      {message ? <Banner tone="success">{message}</Banner> : null}
-      {!canEdit ? <Banner tone="info">You can view this draft but cannot change it.</Banner> : null}
-      <Card>
-        <h2 className="mb-3 font-semibold">Header</h2>
-        <div className="grid gap-3 md:grid-cols-3">
-          <Field label="Office / currency">
+    <div>
+      <div className="sticky top-14 z-20 -mx-4 mb-6 bg-canvas/95 px-4 py-3 sm:-mx-6 sm:px-6 md:top-0 lg:-mx-8 lg:px-8">
+        <p className="text-[13px] text-muted">
+          <Link to="/pis" className="hover:text-ink">Proforma invoices</Link>
+          <span aria-hidden="true"> / </span>
+          <span>{piNumber ?? "New invoice"}</span>
+        </p>
+        <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <h1 className="text-[26px] font-semibold leading-8 tracking-tight text-ink">{piNumber ?? "New proforma invoice"}</h1>
+            <span className="rounded-full bg-white px-2 py-0.5 text-xs font-medium text-muted ring-1 ring-line">
+              {piNumber ? "Revision draft" : "Draft"}
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {canEdit ? (
+              <Button type="button" variant={canGenerate ? "ghost" : "primary"} onClick={() => void onSave()} disabled={working}>
+                {busy === "save" ? "Saving…" : "Save draft"}
+              </Button>
+            ) : null}
+            <Button type="button" variant="accent" onClick={() => void onPreview()} disabled={working}>
+              {previewing ? "Preparing preview…" : "Preview"}
+            </Button>
+            {canGenerate ? (
+              <Button type="button" variant="primary" onClick={() => void onGenerate()} disabled={working}>
+                {busy === "generate" ? "Generating…" : "Generate PI"}
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      </div>
+      {error ? (
+        <Banner tone="error">
+          {error}
+          {conflict && id ? (
+            <button
+              type="button"
+              className="ml-2 underline"
+              onClick={() => {
+                captureBaseline.current = false;
+                setBaseline(null);
+                setSavedNotice(false);
+                setLoading(true);
+                void load(id).finally(() => setLoading(false));
+              }}
+            >
+              Reload draft
+            </button>
+          ) : null}
+        </Banner>
+      ) : null}
+      {!canEdit ? <div className="mb-4"><Banner tone="info">You can view this draft but cannot change it.</Banner></div> : null}
+      {message ? <div className="mb-4"><Banner tone="info">{message}</Banner></div> : null}
+
+      <div className="rounded-[10px] border border-line bg-white px-5 py-6 sm:px-7 sm:py-7 lg:px-8">
+        <div className="grid gap-4 md:grid-cols-3">
+          <Field label="Office" hint={piNumber ? "This number keeps its office and currency." : undefined}>
             <Select value={presetCode} disabled={!canEdit || Boolean(piNumber)} onChange={(event) => setPresetCode(event.target.value as PresetCode | "")}>
               <option value="">Select a preset</option>
               {PRESETS.map((preset) => <option key={preset.code} value={preset.code}>{preset.label}</option>)}
             </Select>
           </Field>
-          <Field label="PI date"><input className={controlClass} type="date" disabled={!canEdit} value={piDate} onChange={(event) => setPiDate(event.target.value)} /></Field>
-          <Field label="Expiry date"><input className={controlClass} type="date" disabled={!canEdit} value={expiryDate} onChange={(event) => setExpiryDate(event.target.value)} /></Field>
-          <Field label="Find client">
-            <input className={controlClass} disabled={!canEdit} value={clientQuery} placeholder="Type at least 2 letters" onChange={(event) => setClientQuery(event.target.value)} />
+          <Field label="Date">
+            <input className={controlClass} type="date" disabled={!canEdit} value={piDate} onChange={(event) => setPiDate(event.target.value)} />
           </Field>
-          <Field label="Client">
-            <Select value={clientId} disabled={!canEdit} onChange={(event) => void chooseClient(event.target.value)}>
-              <option value="">Select</option>
-              {clients.map((client) => <option key={client.id} value={client.id}>{client.company_name}</option>)}
-            </Select>
-          </Field>
-          <Field label="Client contact">
-            <Select value={contactId} disabled={!canEdit} onChange={(event) => setContactId(event.target.value)}>
-              <option value="">None</option>
-              {contacts.map((contact) => <option key={contact.id} value={contact.id}>{contact.name}</option>)}
-            </Select>
-          </Field>
-          <Field label="Customer reference / SO"><input className={controlClass} disabled={!canEdit} value={reference} onChange={(event) => setReference(event.target.value)} /></Field>
-        </div>
-        <div className="mt-3 grid gap-3 md:grid-cols-2">
-          <Field label="Bill to"><TextArea disabled={!canEdit} value={billTo} onChange={(event) => { setBillTo(event.target.value); if (shipSame) setShipTo(event.target.value); }} /></Field>
-          <Field label="Ship to">
-            <label className="mb-2 flex items-center gap-2 text-sm"><input type="checkbox" checked={shipSame} disabled={!canEdit} onChange={(event) => { setShipSame(event.target.checked); if (event.target.checked) setShipTo(billTo); }} /> Same as billing</label>
-            <TextArea disabled={!canEdit || shipSame} value={shipSame ? billTo : shipTo} onChange={(event) => setShipTo(event.target.value)} />
+          <Field label="Valid until">
+            <input className={controlClass} type="date" disabled={!canEdit} value={expiryDate} onChange={(event) => setExpiryDate(event.target.value)} />
           </Field>
         </div>
-      </Card>
-      <Card>
-        <h2 className="mb-3 font-semibold">Sales attribution</h2>
-        <div className="space-y-2">
-          {salespeople.filter((person) => person.is_active || selectedSales.includes(person.id) || person.id === leadId).map((person) => {
-            const checked = selectedSales.includes(person.id) || person.id === leadId;
-            return (
-              <label key={person.id} className="flex flex-wrap items-center gap-3 text-sm">
-                <input type="checkbox" disabled={!canEdit} checked={checked} onChange={(event) => {
-                  setSelectedSales((current) => event.target.checked ? [...current, person.id] : current.filter((item) => item !== person.id));
-                  if (!event.target.checked && leadId === person.id) setLeadId("");
-                  if (event.target.checked && !leadId) setLeadId(person.id);
-                }} />
-                <input type="radio" name="lead" disabled={!canEdit || !checked} checked={leadId === person.id} onChange={() => setLeadId(person.id)} />
-                <span>{person.full_name}{person.phone ? ` · ${person.phone}` : ""}{person.is_active ? "" : " (disabled)"}</span>
-                {leadId === person.id ? <span className="text-xs text-navy-800">Lead</span> : null}
-              </label>
-            );
-          })}
+
+        <div className="mt-6 grid items-start gap-6 lg:grid-cols-[minmax(0,1.7fr)_minmax(16rem,1fr)]">
+          <div>
+            <ClientCombobox
+              query={clientQuery}
+              selected={clientRecord}
+              disabled={!canEdit}
+              onQueryChange={setClientQuery}
+              onSelect={(client) => void chooseClient(client)}
+              onClear={clearClient}
+              onRevert={() => setClientQuery(clientRecord?.company_name ?? "")}
+            />
+            <div className="mt-2 px-0.5 text-[13px] leading-5 text-muted">
+              {clientRecord ? (
+                <p>{selectedContact ? contactLine(selectedContact) : contacts.length > 1 ? "No contact selected." : contacts[0] ? contactLine(contacts[0]) : "No contacts on this client."}</p>
+              ) : (
+                <p>No client selected.</p>
+              )}
+              <p>{billingSummary(billTo)}</p>
+              {!shipSame ? <p>Shipping address differs from billing.</p> : null}
+            </div>
+            <button type="button" className="mt-1 text-sm font-medium text-primary" aria-expanded={editingClient} onClick={() => setEditingClient((current) => !current)}>
+              {editingClient ? "Hide details" : canEdit ? "Edit details" : "View details"}
+            </button>
+          </div>
+          <div>
+            <Field label="Lead salesperson">
+              <Select value={leadId} disabled={!canEdit} onChange={(event) => chooseLead(event.target.value)}>
+                <option value="">Select a lead</option>
+                {assignable.map((person) => (
+                  <option key={person.id} value={person.id}>
+                    {person.full_name}{person.is_active ? "" : " (disabled)"}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <p className="mt-4 text-[13px] text-muted">Prepared by</p>
+            <p className="text-sm text-ink">{profile?.full_name || "Recorded when generated"}</p>
+            {salesSummary ? <p className="mt-2 text-[13px] text-muted">{salesSummary}</p> : null}
+          </div>
         </div>
-        <p className="mt-3 text-sm text-slate-600">Prepared by: {profile?.full_name}. This is recorded when the version is generated and cannot be edited.</p>
-      </Card>
+
+        {editingClient ? (
+          <div className="mt-4 grid max-w-3xl gap-4">
+            {contacts.length > 1 ? (
+              <Field label="Contact">
+                <Select value={contactId} disabled={!canEdit} onChange={(event) => setContactId(event.target.value)}>
+                  <option value="">No contact</option>
+                  {contacts.map((contact) => <option key={contact.id} value={contact.id}>{contact.name}</option>)}
+                </Select>
+              </Field>
+            ) : null}
+            {contacts.length === 1 && !selectedContact ? (
+              <button type="button" className="text-left text-sm font-medium text-primary" onClick={() => setContactId(contacts[0]?.id ?? "")}>
+                Use {contacts[0]?.name || "this contact"}
+              </button>
+            ) : null}
+            <Field label="Billing address">
+              <TextArea
+                disabled={!canEdit}
+                value={billTo}
+                onChange={(event) => {
+                  setBillTo(event.target.value);
+                  if (shipSame) setShipTo(event.target.value);
+                }}
+              />
+            </Field>
+          </div>
+        ) : null}
+        <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2">
+        <Disclosure
+          quiet
+          title="Shipping & reference"
+          summary={clientSummary}
+          open={clientDetailsOpen}
+          onToggle={() => setClientDetailsOpen((current) => !current)}
+        >
+          <div className="grid gap-3">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={!shipSame}
+                disabled={!canEdit}
+                onChange={(event) => {
+                  const different = event.target.checked;
+                  setShipSame(!different);
+                  if (!different) setShipTo(billTo);
+                }}
+              />
+              Shipping address is different from billing
+            </label>
+            {!shipSame ? (
+              <Field label="Shipping address">
+                <TextArea disabled={!canEdit} value={shipTo} onChange={(event) => setShipTo(event.target.value)} />
+              </Field>
+            ) : null}
+            <Field label="Customer / SO reference">
+              <input className={controlClass} disabled={!canEdit} value={reference} onChange={(event) => setReference(event.target.value)} />
+            </Field>
+          </div>
+        </Disclosure>
+        <Disclosure
+          quiet
+          title="Additional salespeople"
+          summary={salesSummary}
+          open={salesOpen}
+          onToggle={() => setSalesOpen((current) => !current)}
+        >
+          <div className="space-y-2">
+            {assignable.map((person) => {
+              const isLead = person.id === leadId;
+              const checked = isLead || selectedSales.includes(person.id);
+              return (
+                <label key={person.id} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    disabled={!canEdit || isLead}
+                    checked={checked}
+                    onChange={(event) => {
+                      setSelectedSales((current) => (
+                        event.target.checked ? [...current, person.id] : current.filter((item) => item !== person.id)
+                      ));
+                    }}
+                  />
+                  <span>
+                    {person.full_name}
+                    {person.phone ? ` · ${person.phone}` : ""}
+                    {isLead ? " · Lead" : ""}
+                    {person.is_active ? "" : " (disabled)"}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </Disclosure>
+        </div>
+
+        <div className="mt-8 border-t border-line pt-6">
       <PiItemSection
         lines={lines}
         currency={currency}
@@ -519,58 +793,136 @@ export function PiEditorPage() {
           setMessage(text);
         }}
       />
-      <Card>
-        <h2 className="mb-3 font-semibold">Adjustments</h2>
-        <div className="grid gap-3 md:grid-cols-3">
-          <Field label="Discount">
-            <Select disabled={!canEdit} value={discountType} onChange={(event) => setDiscountType(event.target.value as DiscountType)}>
-              <option value="none">None</option>
-              <option value="percent">Percentage</option>
-              <option value="fixed">Fixed amount</option>
-            </Select>
-          </Field>
-          {discountType !== "none" ? <Field label={discountType === "percent" ? "Discount percent" : "Discount amount"}><input className={controlClass} inputMode="decimal" disabled={!canEdit} value={discountValue} onChange={(event) => setDiscountValue(event.target.value)} /></Field> : null}
         </div>
-        <div className="mt-3 grid gap-3 md:grid-cols-3">
-          <Charge label="Shipping" enabled={shippingOn} amount={shipping} onEnabled={setShippingOn} onAmount={setShipping} disabled={!canEdit} />
-          <Charge label="Installation" enabled={installationOn} amount={installation} onEnabled={setInstallationOn} onAmount={setInstallation} disabled={!canEdit} />
-          <Charge label="Bank charge" enabled={bankOn} amount={bankCharge} onEnabled={setBankOn} onAmount={setBankCharge} disabled={!canEdit} />
-        </div>
-        <div className="mt-3 space-y-2 text-sm">
-          <label className="flex items-center gap-2"><input type="checkbox" disabled={!canEdit} checked={taxEnabled} onChange={(event) => setTaxEnabled(event.target.checked)} /> Apply tax</label>
-          {taxEnabled ? (
-            <>
-              <Field label="Tax percentage"><input className={controlClass} inputMode="decimal" disabled={!canEdit} value={taxPercent} onChange={(event) => setTaxPercent(event.target.value)} /></Field>
-              {shippingOn ? <label className="flex items-center gap-2"><input type="checkbox" checked={taxExcludesShipping} onChange={(event) => setTaxExcludesShipping(event.target.checked)} /> Exclude shipping from tax</label> : null}
-              {installationOn ? <label className="flex items-center gap-2"><input type="checkbox" checked={taxExcludesInstallation} onChange={(event) => setTaxExcludesInstallation(event.target.checked)} /> Exclude installation from tax</label> : null}
-              {bankOn ? <label className="flex items-center gap-2"><input type="checkbox" checked={taxExcludesBank} onChange={(event) => setTaxExcludesBank(event.target.checked)} /> Exclude bank charge from tax</label> : null}
-            </>
-          ) : null}
-        </div>
-        <dl className="mt-4 grid gap-1 text-sm md:grid-cols-2">
-          {totals.error ? <p className="text-red-800">{totals.error}</p> : (
-            <>
-              <div>Subtotal: {formatMoney(totals.value?.subtotal, currency)}</div>
-              <div>Discount: {formatMoney(totals.value?.discountAmount, currency)}</div>
-              <div>Net items: {formatMoney(totals.value?.netItems, currency)}</div>
-              {taxEnabled ? <div>Taxable base: {formatMoney(totals.value?.taxableBase, currency)}</div> : null}
-              {taxEnabled ? <div>Tax: {formatMoney(totals.value?.taxAmount, currency)}</div> : null}
-              <div className="font-semibold">Grand total: {formatMoney(totals.value?.grandTotal, currency)}</div>
-              {lines.some((line) => !isBlankPlaceholder(line) && line.unitPrice.trim() === "") ? <div className="text-red-800">{lines.filter((line) => !isBlankPlaceholder(line) && line.unitPrice.trim() === "").length} line(s) still need a selling price.</div> : null}
-            </>
-          )}
-        </dl>
-      </Card>
-      <Card>
-        <h2 className="mb-3 font-semibold">Commercial terms</h2>
-        <div className="grid gap-3">
-          <Field label="Price basis / delivery basis"><TextArea disabled={!canEdit} value={priceBasis} onChange={(event) => setPriceBasis(event.target.value)} /></Field>
-          <Field label="Payment terms"><TextArea disabled={!canEdit} value={paymentTerms} onChange={(event) => setPaymentTerms(event.target.value)} /></Field>
-          <Field label="Delivery terms or lead time"><TextArea disabled={!canEdit} value={deliveryTerms} onChange={(event) => setDeliveryTerms(event.target.value)} /></Field>
-          <Field label="Warranty"><TextArea disabled={!canEdit} value={warranty} onChange={(event) => setWarranty(event.target.value)} /></Field>
-          <Field label="Additional notes"><TextArea disabled={!canEdit} value={notes} onChange={(event) => setNotes(event.target.value)} /></Field>
-        </div>
-      </Card>
+
+        <div className="mt-8 grid items-start gap-8 border-t border-line pt-6 lg:grid-cols-[minmax(0,1fr)_22.5rem]">
+        <section className="order-2 lg:order-1">
+          <h2 className="text-[15px] font-semibold text-ink">Commercial terms</h2>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <Field label="Payment">
+              <TextArea rows={2} disabled={!canEdit} value={paymentTerms} onChange={(event) => setPaymentTerms(event.target.value)} />
+            </Field>
+            <Field label="Delivery">
+              <TextArea rows={2} disabled={!canEdit} value={deliveryTerms} onChange={(event) => setDeliveryTerms(event.target.value)} />
+            </Field>
+          </div>
+          <div className="mt-3">
+            <Disclosure quiet title="More commercial terms" summary={termsSummary} open={termsOpen} onToggle={() => setTermsOpen((current) => !current)}>
+              <div className="grid gap-3">
+                <Field label="Price basis">
+                  <TextArea disabled={!canEdit} value={priceBasis} onChange={(event) => setPriceBasis(event.target.value)} />
+                </Field>
+                <Field label="Warranty">
+                  <TextArea disabled={!canEdit} value={warranty} onChange={(event) => setWarranty(event.target.value)} />
+                </Field>
+                <Field label="Additional notes">
+                  <TextArea disabled={!canEdit} value={notes} onChange={(event) => setNotes(event.target.value)} />
+                </Field>
+              </div>
+            </Disclosure>
+          </div>
+        </section>
+        <section className="order-1 lg:order-2">
+          <div className="text-sm">
+            {totals.error ? <p className="mb-2 text-red-800">{totals.error}</p> : null}
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-muted">Subtotal</span>
+              <span className="tabular-nums text-ink">{moneyLabel(totals.value?.subtotal, currency)}</span>
+            </div>
+            {rows.map((row) => (
+              <div key={row.key} className="mt-1 flex items-baseline justify-between gap-3">
+                <span>{row.label}</span>
+                <span className="flex items-center gap-2 tabular-nums">
+                  {row.display}
+                  {canEdit ? (
+                    <button type="button" className="text-navy-800 underline" onClick={() => removeAdjustment(row.key)}>
+                      Remove
+                    </button>
+                  ) : null}
+                </span>
+              </div>
+            ))}
+            {discountType !== "none" && totals.value ? (
+              <div className="mt-1 flex items-baseline justify-between gap-3">
+                <span>Net items</span>
+                <span className="tabular-nums">{formatMoney(totals.value.netItems, currency)}</span>
+              </div>
+            ) : null}
+            {taxEnabled && totals.value?.taxableBase ? (
+              <div className="mt-1 flex items-baseline justify-between gap-3">
+                <span>Taxable base</span>
+                <span className="tabular-nums">{formatMoney(totals.value.taxableBase, currency)}</span>
+              </div>
+            ) : null}
+            {exclusionNotes.map((note) => <p key={note} className="mt-1 text-xs text-muted">{note}</p>)}
+            <div className="mt-3">
+            <Disclosure
+              quiet
+              title={rows.length > 0 ? "Edit discount or charges" : "Add discount or charges"}
+              open={adjustmentsOpen}
+              onToggle={() => setAdjustmentsOpen((current) => !current)}
+            >
+              <div className="grid gap-3">
+                <Field label="Discount">
+                  <Select disabled={!canEdit} value={discountType} onChange={(event) => setDiscountType(event.target.value as DiscountType)}>
+                    <option value="none">None</option>
+                    <option value="percent">Percentage</option>
+                    <option value="fixed">Fixed amount</option>
+                  </Select>
+                </Field>
+                {discountType !== "none" ? (
+                  <Field label={discountType === "percent" ? "Discount percent" : "Discount amount"}>
+                    <input className={controlClass} inputMode="decimal" disabled={!canEdit} value={discountValue} onChange={(event) => setDiscountValue(event.target.value)} />
+                  </Field>
+                ) : null}
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" disabled={!canEdit} checked={taxEnabled} onChange={(event) => setTaxEnabled(event.target.checked)} />
+                  Tax
+                </label>
+                {taxEnabled ? (
+                  <Field label="Tax percentage">
+                    <input className={controlClass} inputMode="decimal" disabled={!canEdit} value={taxPercent} onChange={(event) => setTaxPercent(event.target.value)} />
+                  </Field>
+                ) : null}
+                <Charge label="Shipping" enabled={shippingOn} amount={shipping} onEnabled={setShippingOn} onAmount={setShipping} disabled={!canEdit} />
+                {taxEnabled && shippingOn ? (
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" disabled={!canEdit} checked={taxExcludesShipping} onChange={(event) => setTaxExcludesShipping(event.target.checked)} />
+                    Exclude shipping from tax
+                  </label>
+                ) : null}
+                <Charge label="Installation" enabled={installationOn} amount={installation} onEnabled={setInstallationOn} onAmount={setInstallation} disabled={!canEdit} />
+                {taxEnabled && installationOn ? (
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" disabled={!canEdit} checked={taxExcludesInstallation} onChange={(event) => setTaxExcludesInstallation(event.target.checked)} />
+                    Exclude installation from tax
+                  </label>
+                ) : null}
+                <Charge label="Bank charge" enabled={bankOn} amount={bankCharge} onEnabled={setBankOn} onAmount={setBankCharge} disabled={!canEdit} />
+                {taxEnabled && bankOn ? (
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" disabled={!canEdit} checked={taxExcludesBank} onChange={(event) => setTaxExcludesBank(event.target.checked)} />
+                    Exclude bank charge from tax
+                  </label>
+                ) : null}
+              </div>
+            </Disclosure>
+            </div>
+            <div className="mt-4 flex items-baseline justify-between gap-3 border-t border-line pt-3">
+              <span className="font-semibold text-ink">Total</span>
+              <span className="text-[22px] font-semibold leading-7 tabular-nums text-ink">{moneyLabel(totals.value?.grandTotal, currency)}</span>
+            </div>
+            {!currency ? <p className="mt-1 text-xs text-muted">Currency not chosen.</p> : null}
+            {unpriced > 0 ? (
+              <p className="mt-2 text-red-800">
+                {unpriced === 1 ? "1 item still needs a selling price." : `${unpriced} items still need a selling price.`}
+              </p>
+            ) : null}
+          </div>
+        </section>
+      </div>
+        <p className="mt-6 min-h-5 text-[13px] text-muted" role="status" aria-live="polite">{saveStatus}</p>
+      </div>
     </div>
   );
 }
@@ -592,8 +944,20 @@ function Charge({
 }) {
   return (
     <div>
-      <label className="mb-1 flex items-center gap-2 text-sm font-medium"><input type="checkbox" disabled={disabled} checked={enabled} onChange={(event) => onEnabled(event.target.checked)} /> {label}</label>
-      <input className={controlClass} inputMode="decimal" disabled={disabled || !enabled} value={amount} onChange={(event) => onAmount(event.target.value)} />
+      <label className="flex items-center gap-2">
+        <input type="checkbox" disabled={disabled} checked={enabled} onChange={(event) => onEnabled(event.target.checked)} />
+        {label}
+      </label>
+      {enabled ? (
+        <input
+          className={`${controlClass} mt-1`}
+          inputMode="decimal"
+          aria-label={`${label} amount`}
+          disabled={disabled}
+          value={amount}
+          onChange={(event) => onAmount(event.target.value)}
+        />
+      ) : null}
     </div>
   );
 }

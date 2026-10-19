@@ -4,7 +4,7 @@ import { exactProduct } from "../lib/catalogue-rank";
 import { errorText } from "../lib/errors";
 import { modelKey } from "../lib/model-identity";
 import { archiveRow } from "../lib/records";
-import { controlClass } from "./ui";
+import { AnchoredList, cellControlClass, controlClass } from "./ui";
 
 type Option =
   | { kind: "product"; product: CatalogueProduct }
@@ -16,6 +16,9 @@ export function ModelCombobox({
   disabled,
   canCreate,
   autoFocus = false,
+  compact = false,
+  plain = false,
+  label = "Model",
   onChange,
   onSelect,
   onCreate,
@@ -27,6 +30,9 @@ export function ModelCombobox({
   disabled: boolean;
   canCreate: boolean;
   autoFocus?: boolean;
+  compact?: boolean;
+  plain?: boolean;
+  label?: string;
   onChange: (value: string) => void;
   onSelect: (product: CatalogueProduct, notice?: string | null) => void;
   onCreate: (model: string) => void;
@@ -111,10 +117,16 @@ export function ModelCombobox({
       if (!canCreate) return;
       setOpen(false);
       onCreate(option.model);
+      window.setTimeout(() => {
+        pickedRef.current = false;
+      }, 0);
       return;
     }
     setOpen(false);
     onSelect(option.product);
+    window.setTimeout(() => {
+      pickedRef.current = false;
+    }, 0);
   }
 
   async function restore(product: CatalogueProduct) {
@@ -162,20 +174,26 @@ export function ModelCombobox({
 
   return (
     <div className="relative">
-      <span id={`${baseId}-label`} className="mb-1 block text-sm font-medium text-slate-700">Model</span>
+      {compact ? null : (
+        <span id={`${baseId}-label`} className="mb-1 block text-sm font-medium text-slate-700">
+          {label}
+        </span>
+      )}
       <input
         ref={inputRef}
         id={`${baseId}-model`}
-        className={controlClass}
+        className={plain ? `${cellControlClass} font-medium` : controlClass}
         role="combobox"
         aria-autocomplete="list"
         aria-expanded={open}
         aria-controls={listId}
-        aria-labelledby={`${baseId}-label`}
+        aria-label={compact ? label : undefined}
+        aria-labelledby={compact ? undefined : `${baseId}-label`}
         aria-activedescendant={open && active ? `${baseId}-opt-${activeIndex}` : undefined}
         disabled={disabled}
         value={value}
         placeholder="Search models"
+        autoComplete="off"
         onFocus={() => setOpen(true)}
         onBlur={(event) => {
           if (pickedRef.current) {
@@ -194,12 +212,15 @@ export function ModelCombobox({
         onKeyDown={onKeyDown}
       />
       {open && !disabled ? (
-        <div
-          ref={listRef}
+        <AnchoredList
+          anchorRef={inputRef}
+          panelRef={listRef}
+          open
           id={listId}
-          role="listbox"
-          aria-label="Models"
-          className="absolute z-30 mt-1 max-h-72 w-full overflow-auto rounded-md border border-slate-200 bg-white shadow-lg"
+          label="Models"
+          onMouseDown={() => {
+            pickedRef.current = true;
+          }}
         >
           {exactArchived ? (
             <div className="border-b border-slate-100 px-3 py-2 text-sm">
@@ -264,7 +285,7 @@ export function ModelCombobox({
               </button>
             );
           })}
-        </div>
+        </AnchoredList>
       ) : null}
     </div>
   );

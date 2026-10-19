@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
-import { Banner, Button, Card, Field, PageHeader, Select, TextArea, controlClass } from "../components/ui";
+import { Banner, Button, Disclosure, Field, Menu, PageHeader, Select, TextArea, buttonClass, controlClass } from "../components/ui";
 import { errorText } from "../lib/errors";
 import { isUniqueModelConflict } from "../lib/model-identity";
 import { can } from "../lib/permissions";
@@ -9,6 +9,7 @@ import { numericInputValue } from "../lib/numeric-input";
 import { archiveRow } from "../lib/records";
 import { supabase } from "../lib/supabase";
 import type { CurrencyCode, Product, ProductCost, Vendor } from "../lib/types";
+import { recordOptionalSummary } from "../lib/workspace-view";
 
 function optionalPrice(value: string): string | null {
   const trimmed = value.trim();
@@ -25,6 +26,7 @@ export function ProductDetailPage() {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [vendorId, setVendorId] = useState("");
   const [brand, setBrand] = useState("");
+  const [brandOpen, setBrandOpen] = useState(false);
   const [modelCode, setModelCode] = useState("");
   const [description, setDescription] = useState("");
   const [unit, setUnit] = useState("unit");
@@ -139,19 +141,30 @@ export function ProductDetailPage() {
 
   if (loading) return <p className="text-sm text-slate-600">Loading product…</p>;
 
+  const brandSummary = recordOptionalSummary([{ label: "Brand", value: brand }]);
+
   return (
-    <form onSubmit={onSubmit} className="space-y-4">
+    <form onSubmit={onSubmit} className="space-y-3">
       <PageHeader
         title={isNew ? "New product" : modelCode || "Product"}
-        subtitle="Selling prices are optional defaults. A blank price is unknown, not zero."
+        subtitle={archivedAt ? "Archived. Invoice lines that already use it stay unchanged." : "A blank selling price is unknown, not zero."}
         actions={
           <>
-            <Link to="/products"><Button type="button" variant="secondary">Back</Button></Link>
+            <Link to="/products" className={buttonClass("secondary")}>Back</Link>
             {id && manage ? (
-              <Button type="button" variant="danger" onClick={() => {
-                if (!window.confirm(archivedAt ? "Restore this product?" : "Archive this product?")) return;
-                void archiveRow("products", id, !archivedAt).then(() => setArchivedAt(archivedAt ? null : new Date().toISOString())).catch((caught) => setError(errorText(caught)));
-              }}>{archivedAt ? "Restore" : "Archive"}</Button>
+              <Menu
+                label="More"
+                items={[{
+                  label: archivedAt ? "Restore" : "Archive",
+                  tone: "danger",
+                  onSelect: () => {
+                    if (!window.confirm(archivedAt ? "Restore this product?" : "Archive this product?")) return;
+                    void archiveRow("products", id, !archivedAt)
+                      .then(() => setArchivedAt(archivedAt ? null : new Date().toISOString()))
+                      .catch((caught) => setError(errorText(caught)));
+                  },
+                }]}
+              />
             ) : null}
             {manage ? <Button variant="primary" type="submit" disabled={saving}>{saving ? "Saving…" : "Save"}</Button> : null}
           </>
@@ -159,17 +172,17 @@ export function ProductDetailPage() {
       />
       {error ? <Banner tone="error">{error}</Banner> : null}
       {message ? <Banner tone="success">{message}</Banner> : null}
-      <Card>
-        <div className="grid gap-3 md:grid-cols-2">
+      {!manage ? <Banner tone="info">You can view this product. An administrator has not given you permission to change products.</Banner> : null}
+      <section className="rounded-[10px] border border-line bg-white p-6">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Model" hint="Unique across the catalogue. Capitalisation and surrounding spaces do not make a different model.">
+            <input className={controlClass} required disabled={!manage} value={modelCode} onChange={(event) => setModelCode(event.target.value)} />
+          </Field>
           <Field label="Vendor">
             <Select required disabled={!manage} value={vendorId} onChange={(event) => setVendorId(event.target.value)}>
               <option value="">Select a vendor</option>
               {vendors.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.company_name}</option>)}
             </Select>
-          </Field>
-          <Field label="Brand"><input className={controlClass} disabled={!manage} value={brand} onChange={(event) => setBrand(event.target.value)} /></Field>
-          <Field label="Model" hint="Unique across the catalogue. Capitalisation and surrounding spaces do not make a different model.">
-            <input className={controlClass} required disabled={!manage} value={modelCode} onChange={(event) => setModelCode(event.target.value)} />
           </Field>
           <Field label="Unit" hint="For example unit, set, license, or service.">
             <input className={controlClass} list="units" disabled={!manage} value={unit} onChange={(event) => setUnit(event.target.value)} />
@@ -177,19 +190,24 @@ export function ProductDetailPage() {
           </Field>
         </div>
         <div className="mt-3">
-          <Field label="Description / specifications"><TextArea disabled={!manage} value={description} onChange={(event) => setDescription(event.target.value)} /></Field>
+          <Field label="Description"><TextArea disabled={!manage} value={description} onChange={(event) => setDescription(event.target.value)} /></Field>
         </div>
-        <div className="mt-3 grid gap-3 md:grid-cols-3">
-          <Field label="Default selling price EGP"><input className={controlClass} inputMode="decimal" disabled={!manage} value={egp} onChange={(event) => setEgp(event.target.value)} /></Field>
-          <Field label="Default selling price USD"><input className={controlClass} inputMode="decimal" disabled={!manage} value={usd} onChange={(event) => setUsd(event.target.value)} /></Field>
-          <Field label="Default selling price EUR"><input className={controlClass} inputMode="decimal" disabled={!manage} value={eur} onChange={(event) => setEur(event.target.value)} /></Field>
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <Field label="Selling price EGP"><input className={controlClass} inputMode="decimal" disabled={!manage} value={egp} onChange={(event) => setEgp(event.target.value)} /></Field>
+          <Field label="Selling price USD"><input className={controlClass} inputMode="decimal" disabled={!manage} value={usd} onChange={(event) => setUsd(event.target.value)} /></Field>
+          <Field label="Selling price EUR"><input className={controlClass} inputMode="decimal" disabled={!manage} value={eur} onChange={(event) => setEur(event.target.value)} /></Field>
         </div>
-      </Card>
+        <Disclosure title="Brand" summary={brandSummary} open={brandOpen} onToggle={() => setBrandOpen((current) => !current)}>
+          <Field label="Brand">
+            <input className={controlClass} disabled={!manage} value={brand} onChange={(event) => setBrand(event.target.value)} />
+          </Field>
+        </Disclosure>
+      </section>
       {seeCost ? (
-        <Card>
-          <h2 className="mb-3 font-semibold">Purchase price</h2>
-          <p className="mb-3 text-sm text-slate-600">Visible only to people with purchase-price permission. It never appears on a customer PDF.</p>
-          <div className="grid gap-3 md:grid-cols-2">
+        <section className="rounded-[10px] border border-line bg-white p-6">
+          <h2 className="text-sm font-semibold text-navy-950">Purchase price</h2>
+          <p className="mt-1 text-xs text-slate-500">Only people with purchase-price permission can see this. It never appears on a customer PDF.</p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <Field label="Purchase price"><input className={controlClass} inputMode="decimal" disabled={!manage} value={purchasePrice} onChange={(event) => setPurchasePrice(event.target.value)} /></Field>
             <Field label="Currency">
               <Select disabled={!manage} value={purchaseCurrency} onChange={(event) => setPurchaseCurrency(event.target.value as CurrencyCode | "")}>
@@ -200,7 +218,7 @@ export function ProductDetailPage() {
               </Select>
             </Field>
           </div>
-        </Card>
+        </section>
       ) : null}
     </form>
   );
