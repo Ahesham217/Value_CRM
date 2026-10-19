@@ -61,11 +61,14 @@ supabase db query --linked -f supabase/migrations/20261018130500_clear_uae_fixed
 supabase db query --linked -f supabase/migrations/20261018133347_pi_default_cairo_dates.sql
 supabase db query --linked -f supabase/migrations/20261018143000_product_model_identity.sql
 supabase db query --linked -f supabase/migrations/20261019080451_on_demand_pi_pdfs.sql
+supabase db query --linked -f supabase/migrations/20261019150000_product_pi_history.sql
 ```
 
 The first migration installs `public.rls_auto_enable()` and the `ensure_rls` event trigger. That is the same automatic RLS trigger used on the other Value Technologies projects: every new table in `public` gets row level security. The trigger does not create policies. This repo creates those policies explicitly and also enables RLS in the table statements.
 
 `20261019080451_on_demand_pi_pdfs.sql` is included in the list above and has been applied to Value CRM. It does not rewrite issued snapshots or existing PDF metadata.
+
+`20261019150000_product_pi_history.sql` is included in the list above and has been applied to Value CRM. It stores line and product identifiers on newly issued snapshots and adds the product history query. It does not rewrite older snapshots.
 
 `20261018120300_egypt_logo.sql` stores the logo extracted from `reference-templates/Egypt Template.xlsx`. The UAE workbooks do not contain a logo. If Settings shows no Egypt logo, run that file once in the SQL editor.
 
@@ -168,6 +171,26 @@ The customer PDF contains the company, client, bill-to, ship-to, the lead salesp
 `pi_versions.pdf_status` and `pdf_path` remain as legacy metadata. New versions are stored as `issued` with no file path. Older rows may still say `pending` or `ready`; the screen does not treat that as a failed download. Previously stored files in the private `pi-pdfs` bucket are left in place. Removing them is a separate step, described in [docs/cleanup-pi-pdfs.md](docs/cleanup-pi-pdfs.md), and it has not been run.
 
 A newly rendered PDF uses the saved content and layout. Its file bytes are not promised to match an older stored file, because PDF metadata can differ.
+
+## Product PI history
+
+A saved product's page lists where that product has been quoted. The history is not shown while a new product is still unsaved, and editing the model on screen does not switch the history to another product.
+
+By default the list includes:
+
+- The latest issued version of each PI, when that version contains the product. The latest version is chosen first. If a later revision removes the product, the older version is not shown as the current offer.
+- Each saved matching line on an open initial draft.
+- Each saved matching line on an open revision draft, in addition to the latest issued version.
+
+Closed working copies are not shown again as drafts. **Include older revisions** adds earlier issued versions that contain the product, with the version label and prices saved on that version. A duplicate PI is a separate document. Several lines for the same product on one version stay separate.
+
+The quoted unit price is the saved line price before any invoice-wide discount, tax, or charge. A discount is marked **Discount on PI** and the saved discount type and value are in the row details. The history does not allocate that discount, convert currencies, or calculate a net price, revenue, or margin. An explicit zero stays zero. A missing draft price is **Not priced**.
+
+Issued rows use that version's saved client, date, model, description, quantity, unit, price, and currency. Draft rows use the saved draft. **PI status** on an issued row is the invoice's current tracking status, not a status recorded for that revision. An issued PI whose tracking status is still draft is shown as **Issued**. Draft rows are labelled **Draft** even when the invoice has another tracking status.
+
+New issued snapshots store the line id, product id, and position. Those lines match on product id, including after a model rename. Older snapshots are left unchanged. If a snapshot line has no product id, it matches only when the saved model is the same ignoring capitalisation and surrounding spaces. The row explains that model-only match. Renaming the catalogue model later can stop those older lines from matching. A line that already has a product id is not also attached to a different product because the model text looks similar.
+
+The history uses the same PI visibility rules as the rest of the application. People only see PIs they are allowed to read, and inactive users see none. The result count and the client, currency, and status filters come from that same authorized set. Purchase prices are not part of the query.
 
 ## Access rules
 

@@ -515,6 +515,30 @@ describe("PI pdf", () => {
     await expect(renderPiPdf(issued)).rejects.toThrow(/cannot render/);
   });
 
+  it("renders a snapshot that also stores product and line identifiers", async () => {
+    const lineId = "11111111-1111-1111-1111-111111111111";
+    const productId = "22222222-2222-2222-2222-222222222222";
+    const issued = snapshot({
+      lines: [{
+        model_code: "VT-1",
+        description: "Controller",
+        unit: "unit",
+        quantity: "2",
+        unit_price: "100.00",
+        line_total: "200.00",
+        line_id: lineId,
+        product_id: productId,
+        position: 1,
+      }],
+    });
+    const { text } = await textOf(await renderPiPdf(issued));
+    expect(text).toContain("VT-1");
+    expect(text).toContain("Controller");
+    expect(text).toContain("100.00");
+    expect(text).not.toContain(lineId);
+    expect(text).not.toContain(productId);
+  });
+
   it("reports a snapshot that is missing saved rendering data", async () => {
     const issued = snapshot();
     const broken = { ...issued, company: undefined } as unknown as PiSnapshot;

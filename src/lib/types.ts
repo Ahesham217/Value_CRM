@@ -216,6 +216,9 @@ export type SnapshotLine = {
   quantity: string;
   unit_price: string;
   line_total: string;
+  line_id?: string | null;
+  product_id?: string | null;
+  position?: number | null;
 };
 
 export type PiSnapshot = {
