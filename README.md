@@ -206,10 +206,10 @@ After the first deploy, add the production origin and `https://<your-host>/reset
 
 ### Branch previews before merging
 
-Cloudflare's `wrangler preview` command requires the top-level `"previews": {}` block included in this repository. Keep the assets settings at the top level; the Vite build supplies the generated assets directory.
+Cloudflare's `wrangler preview` command requires a `previews` block. `npm run build:preview` builds the application, follows Vite's `.wrangler/deploy/config.json` redirect, and ensures the exact generated Wrangler configuration contains this block before preview deployment. It preserves any existing preview options and all other generated settings, and fails early if the build output or assets are missing. Keep the assets settings at the top level; the Vite build supplies the generated assets directory.
 
 For a preview of an unmerged branch, configure that branch's build with:
-- Build command: `npm run build`.
+- Build command: `npm run build:preview`.
 - Preview/non-production deploy command: `npx wrangler preview`.
 - Build variables: `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`.
 
@@ -218,7 +218,7 @@ Keep the production branch as `main` and its deploy command as `npx wrangler dep
 The local equivalent is:
 
 ```bash
-npm run build
+npm run build:preview
 npx wrangler preview
 ```
 
