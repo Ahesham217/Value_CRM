@@ -102,6 +102,35 @@ async function textOf(bytes: Uint8Array): Promise<{ text: string; pages: number 
 }
 
 describe("PI pdf", () => {
+  it.each([
+    ["EG-EGP", "egypt-v1", "EG", "EGP"],
+    ["AE-USD", "uae-v1", "AE", "USD"],
+    ["AE-EUR", "uae-v1", "AE", "EUR"],
+  ] as const)("shows the company contact and keeps the preparer internal for %s", async (preset, layout, office, currency) => {
+    const issued = snapshot({
+      preset_code: preset, layout_version: layout, office, currency,
+      revision: 1, revision_label: "R1", display_number: `${office}-2026-00001-R1`,
+    });
+    const original = JSON.stringify(issued);
+    const definition = JSON.stringify(buildPiDefinition(issued));
+    expect(definition).toContain("Contact person");
+    expect(definition).toContain("Hana Saleh");
+    expect(definition).toContain("+20 111");
+    expect(definition).not.toContain("Lead salesperson");
+    expect(definition).not.toContain("Prepared by");
+    expect(definition).not.toContain("Karim Nabil");
+    const { text } = await textOf(await renderPiPdf(issued));
+    expect(text).toContain("Contact person");
+    expect(text).toContain("Hana Saleh");
+    expect(text).toContain("+20 111");
+    expect(text).not.toContain("Lead salesperson");
+    expect(text).not.toContain("Prepared by");
+    expect(text).not.toContain("Karim Nabil");
+    expect(text).not.toContain("Omar Internal");
+    expect(JSON.stringify(issued)).toBe(original);
+    expect(issued.sales.prepared_by).toBe("Karim Nabil");
+  });
+
   it("renders the Egypt preset with selectable bank details and no internal fields", async () => {
     const bytes = await renderPiPdf(snapshot());
     expect(Buffer.from(bytes.subarray(0, 5)).toString()).toBe("%PDF-");
@@ -115,7 +144,7 @@ describe("PI pdf", () => {
     expect(text).toContain("CIBEEGCX072");
     expect(text).toContain("100022610548");
     expect(text).toContain("Hana Saleh");
-    expect(text).toContain("Karim Nabil");
+    expect(text).not.toContain("Karim Nabil");
     expect(text).toContain("EGP 200.00");
     expect(text).toContain("Client");
     expect(text).toContain("the information mentioned above");
@@ -471,7 +500,7 @@ describe("PI pdf", () => {
     expect(text).toContain("Nile Works");
     expect(text).toContain("Commercial International Bank (CIB)");
     expect(text).toContain("Hana Saleh");
-    expect(text).toContain("Karim Nabil");
+    expect(text).not.toContain("Karim Nabil");
     expect(text).toContain("VT-1");
     expect(text).toContain("Controller");
     for (const value of Object.values(currentRecords)) {

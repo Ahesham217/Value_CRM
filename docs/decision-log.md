@@ -172,3 +172,13 @@ Historical decision dates are **unknown** where the repository shows the impleme
 ### DEC-013 implementation follow-up — 2026-10-19
 
 Use `npm run build:preview` for preview builds. The script follows Vite's deploy-config redirect and ensures the generated configuration has a `previews` object, because the hosted preview repeatedly reported that block missing. It preserves all existing settings and validates built assets. Production keeps `npm run build` and `npx wrangler deploy`. Verified the build and a simulated missing-block repair locally; no preview was published by the agent.
+
+
+## DEC-015
+
+- Decision date: 2026-10-19
+- Status: Implemented
+- Decision: Customer PI PDFs label the assigned lead salesperson's name and phone as **Contact person** and do not print **Prepared by** or the preparer's name.
+- Reason: The customer needs a contact, while preparation attribution is for internal records.
+- Consequences or limitations: Lead assignments, permissions, preparer attribution, and immutable snapshots remain unchanged. This explicitly supersedes the customer-visible preparer part of DEC-004 and is an intentional presentation/privacy exception to the otherwise version-frozen layout policy: previews and regenerated downloads, including older snapshots, use this customer-facing attribution rule. The company contact is not replaced with the client's contact. Previously downloaded PDFs on external devices cannot be altered.
+- References: `src/lib/pdf.ts`, `src/lib/pdf.test.ts`, README PDF behaviour.
