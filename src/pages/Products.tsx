@@ -80,7 +80,7 @@ export function ProductsPage() {
       {loading ? <p className="text-sm text-slate-600">Loading products…</p> : null}
       {!loading && rows.length === 0 ? <EmptyState title="No products yet" body={manage ? "Use Add product, or create one while preparing a proforma invoice." : "No products are available."} /> : null}
       {rows.length > 0 ? (
-        <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
+        <div className="overflow-x-auto rounded-[10px] border border-line bg-white">
           <table className="min-w-full text-left text-sm">
             <thead className="bg-slate-50">
               <tr>
@@ -98,7 +98,7 @@ export function ProductsPage() {
               {rows.map((product) => (
                 <tr
                   key={product.id}
-                  className="cursor-pointer border-t border-slate-100 hover:bg-slate-50"
+                  className="cursor-pointer border-t border-slate-100 hover:bg-canvas"
                   onClick={(event) => {
                     if (event.target instanceof Element && event.target.closest("a, button")) return;
                     navigate(`/products/${product.id}`);

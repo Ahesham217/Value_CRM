@@ -4,14 +4,16 @@ import { displayStatusLabel } from "../lib/format";
 import { useAnchoredStyle } from "./useAnchoredStyle";
 
 const variants = {
-  primary: "bg-navy-900 text-white hover:bg-navy-800",
-  secondary: "border border-slate-300 bg-white text-slate-800 hover:bg-slate-50",
-  danger: "border border-red-300 bg-white text-red-800 hover:bg-red-50",
-  ghost: "text-navy-900 hover:bg-slate-100",
+  primary: "bg-primary text-white hover:bg-primary-hover",
+  secondary: "border border-line bg-white text-ink hover:bg-canvas",
+  accent: "border border-primary bg-white text-primary hover:bg-primary-soft",
+  danger: "border border-red-200 bg-white text-red-800 hover:bg-red-50",
+  ghost: "text-ink hover:bg-canvas",
+  quiet: "text-primary hover:bg-primary-soft",
 } as const;
 
 export function buttonClass(variant: keyof typeof variants = "secondary", className = "") {
-  return `inline-flex h-9 items-center justify-center gap-1 rounded-md px-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50 ${variants[variant]} ${className}`;
+  return `inline-flex h-10 items-center justify-center gap-1 rounded-md px-3.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50 ${variants[variant]} ${className}`;
 }
 
 export function Button({
@@ -38,7 +40,7 @@ export function Field({
 }) {
   return (
     <label className={`block text-sm ${className}`}>
-      <span className="mb-1 block font-medium text-slate-700">{label}</span>
+      <span className="mb-1.5 block text-[13px] font-medium text-muted">{label}</span>
       {children}
       {error ? <span className="mt-1 block text-xs text-red-800">{error}</span> : null}
       {hint ? <span className="mt-1 block text-xs text-slate-500">{hint}</span> : null}
@@ -47,10 +49,13 @@ export function Field({
 }
 
 export const controlClass =
-  "h-9 w-full rounded-md border border-slate-300 bg-white px-2.5 text-sm text-slate-900 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-600";
+  "h-10 w-full rounded-md border border-line bg-white px-3 text-sm text-ink disabled:cursor-not-allowed disabled:bg-canvas disabled:text-muted";
 
-export const thClass = "px-2 py-1.5 text-left text-xs font-medium text-slate-500";
-export const tdClass = "px-2 py-1.5 align-middle";
+export const cellControlClass =
+  "h-9 w-full rounded-md border border-transparent bg-transparent px-1.5 text-sm text-ink tabular-nums hover:border-line focus:border-primary focus:bg-white disabled:cursor-default disabled:text-ink";
+
+export const thClass = "px-3 py-2.5 text-left text-[13px] font-medium text-muted";
+export const tdClass = "px-3 py-3 align-middle text-sm text-ink";
 
 export function TextArea({ className = "", ...props }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return <textarea rows={3} className={`${controlClass} h-auto min-h-16 py-1.5 ${className}`} {...props} />;
@@ -89,10 +94,10 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+    <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
       <div className="min-w-0">
-        <h1 className="text-lg font-semibold text-navy-950">{title}</h1>
-        {subtitle ? <p className="text-sm text-slate-600">{subtitle}</p> : null}
+        <h1 className="text-[26px] font-semibold leading-8 tracking-tight text-ink">{title}</h1>
+        {subtitle ? <p className="mt-1 text-sm text-muted">{subtitle}</p> : null}
       </div>
       {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
     </div>
@@ -101,7 +106,7 @@ export function PageHeader({
 
 export function EmptyState({ title, body, action }: { title: string; body: string; action?: ReactNode }) {
   return (
-    <div className="rounded-md border border-dashed border-slate-300 bg-white px-4 py-8 text-center">
+    <div className="rounded-[10px] border border-dashed border-line bg-white px-6 py-10 text-center">
       <h2 className="text-sm font-semibold text-slate-800">{title}</h2>
       <p className="mx-auto mt-1 max-w-md text-sm text-slate-600">{body}</p>
       {action ? <div className="mt-3">{action}</div> : null}
@@ -143,7 +148,7 @@ export function StatusBadge({ status }: { status: string }) {
     cancelled: "bg-red-50 text-red-900",
   };
   return (
-    <span className={`inline-flex rounded px-1.5 py-0.5 text-xs font-medium ${styles[status] ?? styles.draft}`}>
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${styles[status] ?? styles.draft}`}>
       {displayStatusLabel(status)}
     </span>
   );
@@ -180,10 +185,10 @@ export function Modal({
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
-        className="max-h-[90vh] w-full max-w-lg overflow-auto rounded-md border border-slate-200 bg-white p-4"
+        className="max-h-[90vh] w-full max-w-lg overflow-auto rounded-[10px] border border-line bg-white p-6"
       >
         <div className="mb-3 flex items-start justify-between gap-3">
-          <h2 className="text-base font-semibold text-navy-950">{title}</h2>
+          <h2 className="text-base font-semibold text-ink">{title}</h2>
           <button type="button" className="text-sm text-slate-600 underline" onClick={onClose}>
             Close
           </button>
@@ -196,7 +201,7 @@ export function Modal({
 }
 
 export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <section className={`rounded-md border border-slate-200 bg-white p-3 ${className}`}>{children}</section>;
+  return <section className={`rounded-[10px] border border-line bg-white p-6 ${className}`}>{children}</section>;
 }
 
 export function Panel({
@@ -211,12 +216,12 @@ export function Panel({
   actions?: ReactNode;
 }) {
   return (
-    <section className={`rounded-md border border-slate-200 bg-white ${className}`}>
-      <div className="flex items-center justify-between gap-2 border-b border-slate-200 px-3 py-2">
-        <h2 className="text-sm font-semibold text-navy-950">{title}</h2>
+    <section className={`rounded-[10px] border border-line bg-white ${className}`}>
+      <div className="flex items-center justify-between gap-2 border-b border-line px-6 py-4">
+        <h2 className="text-[15px] font-semibold text-ink">{title}</h2>
         {actions}
       </div>
-      <div className="p-3">{children}</div>
+      <div className="p-6">{children}</div>
     </section>
   );
 }
@@ -227,36 +232,47 @@ export function Disclosure({
   open,
   onToggle,
   children,
+  quiet = false,
 }: {
   title: string;
   summary?: string | null;
   open: boolean;
   onToggle: () => void;
   children: ReactNode;
+  quiet?: boolean;
 }) {
   const panelId = useId();
   return (
-    <div className="border-t border-slate-200">
+    <div className={quiet ? (open ? "w-full" : "") : "border-t border-line pt-4"}>
       <button
         type="button"
-        className="flex w-full items-start gap-3 py-2 text-left"
+        className={quiet
+          ? "inline-flex items-center gap-1.5 text-sm font-medium text-primary"
+          : "flex w-full items-start gap-3 text-left"}
         aria-expanded={open}
         aria-controls={panelId}
         onClick={onToggle}
       >
-        <span className="min-w-0 flex-1">
-          <span className="block text-sm font-medium text-navy-900">{title}</span>
-          {!open && summary ? <span className="mt-0.5 block text-sm text-slate-600">{summary}</span> : null}
+        {quiet ? <span aria-hidden="true">{open ? "–" : "+"}</span> : null}
+        <span className="min-w-0">
+          <span className={quiet ? "" : "block text-sm font-medium text-ink"}>{title}</span>
+          {!open && summary ? <span className={`${quiet ? "ml-2" : "mt-0.5 block"} text-[13px] font-normal text-muted`}>{summary}</span> : null}
         </span>
-        <span className="shrink-0 text-sm text-slate-500">{open ? "Hide" : "Show"}</span>
+        {quiet ? null : <span className="ml-auto shrink-0 text-sm text-muted">{open ? "Hide" : "Show"}</span>}
       </button>
       {open ? (
-        <div id={panelId} className="pb-3">
+        <div id={panelId} className="pt-3">
           {children}
         </div>
       ) : null}
     </div>
   );
+}
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const letters = parts.slice(0, 2).map((part) => part[0] ?? "");
+  return (letters.join("") || "U").toUpperCase();
 }
 
 export type MenuItem = {
@@ -270,10 +286,12 @@ export function Menu({
   label,
   items,
   align = "end",
+  appearance = "default",
 }: {
   label: string;
   items: MenuItem[];
   align?: "start" | "end";
+  appearance?: "default" | "quiet" | "account";
 }) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -360,16 +378,35 @@ export function Menu({
       <button
         ref={buttonRef}
         type="button"
-        className={buttonClass("secondary", "max-w-44 overflow-hidden px-2.5")}
+        className={
+          appearance === "quiet"
+            ? "inline-flex h-8 w-8 items-center justify-center rounded-md text-lg leading-none text-muted hover:bg-canvas"
+            : appearance === "account"
+              ? "inline-flex max-w-48 items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-canvas"
+              : buttonClass("secondary", "max-w-44 overflow-hidden px-2.5")
+        }
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={menuId}
+        aria-label={appearance === "quiet" ? label : undefined}
         onClick={() => {
           setActive(enabledIndexes()[0] ?? 0);
           setOpen((current) => !current);
         }}
       >
-        <span className="min-w-0 truncate">{label}</span>
+        {appearance === "quiet" ? (
+          <span aria-hidden="true">···</span>
+        ) : appearance === "account" ? (
+          <>
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-soft text-xs font-semibold text-primary">
+              {initials(label)}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-sm text-ink">{label}</span>
+            <span aria-hidden="true" className="text-muted">›</span>
+          </>
+        ) : (
+          <span className="min-w-0 truncate">{label}</span>
+        )}
       </button>
       {open
         ? createPortal(
@@ -381,7 +418,7 @@ export function Menu({
               aria-label={label}
               style={style}
               aria-activedescendant={`${menuId}-item-${active}`}
-              className="overflow-auto rounded-md border border-slate-200 bg-white py-1 shadow-md"
+              className="overflow-auto rounded-lg border border-line bg-white py-1 shadow-sm"
               onKeyDown={onPanelKey}
             >
               {items.map((item, index) => (
@@ -420,7 +457,7 @@ export function Tabs<T extends string>({
   onChange: (id: T) => void;
 }) {
   return (
-    <div role="tablist" aria-label={label} className="mb-3 flex flex-wrap gap-1 border-b border-slate-200">
+    <div role="tablist" aria-label={label} className="mb-6 flex flex-wrap gap-1 border-b border-line">
       {tabs.map((tab, index) => {
         const selected = tab.id === value;
         return (
@@ -430,8 +467,8 @@ export function Tabs<T extends string>({
             role="tab"
             aria-selected={selected}
             tabIndex={selected ? 0 : -1}
-            className={`-mb-px border-b-2 px-3 py-2 text-sm ${
-              selected ? "border-navy-900 font-semibold text-navy-950" : "border-transparent text-slate-600 hover:text-slate-900"
+            className={`-mb-px border-b-2 px-3 py-2.5 text-sm ${
+              selected ? "border-primary font-semibold text-ink" : "border-transparent text-muted hover:text-ink"
             }`}
             onClick={() => onChange(tab.id)}
             onKeyDown={(event) => {
@@ -454,7 +491,7 @@ export function FilterChip({ label, onRemove }: { label: string; onRemove: () =>
   return (
     <button
       type="button"
-      className="inline-flex h-7 items-center gap-1 rounded-full border border-slate-300 bg-white px-2 text-xs text-slate-700 hover:bg-slate-50"
+      className="inline-flex h-8 items-center gap-1 rounded-full border border-line bg-white px-2.5 text-[13px] text-ink hover:bg-canvas"
       aria-label={`Remove ${label}`}
       onClick={onRemove}
     >
@@ -493,7 +530,7 @@ export function AnchoredList({
       aria-label={label}
       aria-labelledby={labelledBy}
       style={style}
-      className="overflow-auto rounded-md border border-slate-200 bg-white shadow-md"
+      className="overflow-auto rounded-lg border border-line bg-white shadow-sm"
       onMouseDown={(event) => {
         event.preventDefault();
         onMouseDown?.();

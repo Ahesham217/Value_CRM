@@ -212,7 +212,7 @@ export function SettingsPage() {
         ]}
       />
       {tab === "company" && selected ? (
-        <section className="rounded-md border border-slate-200 bg-white p-3">
+        <section className="rounded-[10px] border border-line bg-white p-6">
           <div className="flex flex-wrap gap-2" role="tablist" aria-label="Company presets">
             {PRESETS.map((preset) => {
               const active = preset.code === selected.code;
@@ -282,7 +282,7 @@ export function SettingsPage() {
         </section>
       ) : null}
       {tab === "terms" && terms ? (
-        <section className="rounded-md border border-slate-200 bg-white p-3">
+        <section className="rounded-[10px] border border-line bg-white p-6">
           <form onSubmit={saveTerms} className="grid gap-3">
             <Field label="Payment terms"><input className={controlClass} value={terms.payment_terms} onChange={(event) => setTerms({ ...terms, payment_terms: event.target.value })} /></Field>
             <Field label="Delivery terms"><input className={controlClass} value={terms.delivery_terms} onChange={(event) => setTerms({ ...terms, delivery_terms: event.target.value })} /></Field>
@@ -294,7 +294,7 @@ export function SettingsPage() {
         </section>
       ) : null}
       {tab === "users" ? (
-        <section className="rounded-md border border-slate-200 bg-white p-3">
+        <section className="rounded-[10px] border border-line bg-white p-6">
           {userView === "list" ? (
             <>
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -353,13 +353,13 @@ export function SettingsPage() {
                   </Field>
                 ) : null}
               </div>
-              <fieldset className="grid gap-2 rounded-md border border-slate-200 p-3 text-sm">
+              <fieldset className="grid gap-2 rounded-lg border border-line p-4 text-sm">
                 <legend className="px-1 font-medium text-slate-800">Account</legend>
                 <Check label="Active" checked={draftUser.is_active} onChange={(checked) => setDraftUser({ ...draftUser, is_active: checked })} />
                 <Check label="Administrator" hint="An administrator can do every action." checked={draftUser.is_admin} onChange={(checked) => setDraftUser({ ...draftUser, is_admin: checked })} />
                 <Check label="Can be assigned as a salesperson" checked={draftUser.is_salesperson} onChange={(checked) => setDraftUser({ ...draftUser, is_salesperson: checked })} />
               </fieldset>
-              <fieldset className="grid gap-2 rounded-md border border-slate-200 p-3 text-sm">
+              <fieldset className="grid gap-2 rounded-lg border border-line p-4 text-sm">
                 <legend className="px-1 font-medium text-slate-800">PI access</legend>
                 <Field label="PI visibility">
                   <Select value={draftUser.pi_visibility} onChange={(event) => setDraftUser({ ...draftUser, pi_visibility: event.target.value as PiVisibility })}>
@@ -370,7 +370,7 @@ export function SettingsPage() {
                 <Check label="Create and edit drafts, revisions, and duplicates" checked={draftUser.can_edit_drafts} onChange={(checked) => setDraftUser({ ...draftUser, can_edit_drafts: checked })} />
                 <Check label="Generate PIs" checked={draftUser.can_generate_pis} onChange={(checked) => setDraftUser({ ...draftUser, can_generate_pis: checked })} />
               </fieldset>
-              <fieldset className="grid gap-2 rounded-md border border-slate-200 p-3 text-sm">
+              <fieldset className="grid gap-2 rounded-lg border border-line p-4 text-sm">
                 <legend className="px-1 font-medium text-slate-800">Records</legend>
                 <Check label="Manage clients" checked={draftUser.can_manage_clients} onChange={(checked) => setDraftUser({ ...draftUser, can_manage_clients: checked })} />
                 <Check label="Manage vendors" checked={draftUser.can_manage_vendors} onChange={(checked) => setDraftUser({ ...draftUser, can_manage_vendors: checked })} />

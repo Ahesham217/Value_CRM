@@ -4,7 +4,7 @@ import { exactProduct } from "../lib/catalogue-rank";
 import { errorText } from "../lib/errors";
 import { modelKey } from "../lib/model-identity";
 import { archiveRow } from "../lib/records";
-import { AnchoredList, controlClass } from "./ui";
+import { AnchoredList, cellControlClass, controlClass } from "./ui";
 
 type Option =
   | { kind: "product"; product: CatalogueProduct }
@@ -17,6 +17,7 @@ export function ModelCombobox({
   canCreate,
   autoFocus = false,
   compact = false,
+  plain = false,
   label = "Model",
   onChange,
   onSelect,
@@ -30,6 +31,7 @@ export function ModelCombobox({
   canCreate: boolean;
   autoFocus?: boolean;
   compact?: boolean;
+  plain?: boolean;
   label?: string;
   onChange: (value: string) => void;
   onSelect: (product: CatalogueProduct, notice?: string | null) => void;
@@ -180,7 +182,7 @@ export function ModelCombobox({
       <input
         ref={inputRef}
         id={`${baseId}-model`}
-        className={controlClass}
+        className={plain ? `${cellControlClass} font-medium` : controlClass}
         role="combobox"
         aria-autocomplete="list"
         aria-expanded={open}

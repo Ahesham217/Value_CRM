@@ -65,7 +65,7 @@ export function ClientsPage() {
         <EmptyState title="No clients yet" body={manage ? "Use Add client to save a company before you prepare a PI." : "No clients are available."} />
       ) : null}
       {rows.length > 0 ? (
-        <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
+        <div className="overflow-x-auto rounded-[10px] border border-line bg-white">
           <table className="min-w-full text-left text-sm">
             <thead className="bg-slate-50">
               <tr>
@@ -78,7 +78,7 @@ export function ClientsPage() {
               {rows.map((client) => (
                 <tr
                   key={client.id}
-                  className="cursor-pointer border-t border-slate-100 hover:bg-slate-50"
+                  className="cursor-pointer border-t border-slate-100 hover:bg-canvas"
                   onClick={(event) => {
                     if (event.target instanceof Element && event.target.closest("a, button")) return;
                     navigate(`/clients/${client.id}`);

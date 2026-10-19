@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   additionalSalesSummary,
+  editorFingerprint,
+  type EditorSnapshot,
   adjustmentRows,
   billingSummary,
   clientOptionalSummary,
@@ -11,6 +13,66 @@ import {
   recordOptionalSummary,
   taxExclusionNotes,
 } from "./workspace-view";
+
+function snapshot(overrides: Partial<EditorSnapshot> = {}): EditorSnapshot {
+  return {
+    presetCode: "EG-EGP",
+    piDate: "2026-10-19",
+    expiryDate: "2026-11-19",
+    clientId: "client-1",
+    contactId: "contact-1",
+    billTo: "Cairo",
+    shipTo: "Cairo",
+    shipSame: true,
+    reference: "",
+    leadId: "lead-1",
+    salespersonIds: ["lead-1"],
+    lines: [{ productId: "p1", model: "A100", description: "Pump", unit: "unit", quantity: "1", unitPrice: "10" }],
+    discountType: "none",
+    discountValue: "",
+    shippingOn: false,
+    shipping: "",
+    installationOn: false,
+    installation: "",
+    bankOn: false,
+    bankCharge: "",
+    taxEnabled: false,
+    taxPercent: "",
+    taxExcludesShipping: false,
+    taxExcludesInstallation: false,
+    taxExcludesBank: false,
+    priceBasis: "",
+    paymentTerms: "Advance",
+    deliveryTerms: "4 weeks",
+    warranty: "",
+    notes: "",
+    ...overrides,
+  };
+}
+
+describe("draft change tracking", () => {
+  it("matches an unchanged draft and notices a later edit", () => {
+    const saved = editorFingerprint(snapshot());
+    expect(editorFingerprint(snapshot({ salespersonIds: ["lead-1"] }))).toBe(saved);
+    expect(editorFingerprint(snapshot({ salespersonIds: ["b", "a"] }))).toBe(
+      editorFingerprint(snapshot({ salespersonIds: ["a", "b"] })),
+    );
+    expect(editorFingerprint(snapshot({ lines: [{ ...snapshot().lines[0]!, unitPrice: "12" }] }))).not.toBe(saved);
+  });
+
+  it("treats item order as part of the draft", () => {
+    const first = snapshot({
+      lines: [
+        { productId: "p1", model: "A", description: "", unit: "unit", quantity: "1", unitPrice: "1" },
+        { productId: "p2", model: "B", description: "", unit: "unit", quantity: "1", unitPrice: "2" },
+      ],
+    });
+    const reversed = snapshot({
+      lines: [...first.lines].reverse(),
+    });
+    expect(editorFingerprint(reversed)).not.toBe(editorFingerprint(first));
+  });
+});
 
 describe("everyday summaries", () => {
   it("keeps a short description and collapses a long one to one line", () => {

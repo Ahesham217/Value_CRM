@@ -173,7 +173,7 @@ export function ProductDetailPage() {
       {error ? <Banner tone="error">{error}</Banner> : null}
       {message ? <Banner tone="success">{message}</Banner> : null}
       {!manage ? <Banner tone="info">You can view this product. An administrator has not given you permission to change products.</Banner> : null}
-      <section className="rounded-md border border-slate-200 bg-white p-3">
+      <section className="rounded-[10px] border border-line bg-white p-6">
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Model" hint="Unique across the catalogue. Capitalisation and surrounding spaces do not make a different model.">
             <input className={controlClass} required disabled={!manage} value={modelCode} onChange={(event) => setModelCode(event.target.value)} />
@@ -204,7 +204,7 @@ export function ProductDetailPage() {
         </Disclosure>
       </section>
       {seeCost ? (
-        <section className="rounded-md border border-slate-200 bg-white p-3">
+        <section className="rounded-[10px] border border-line bg-white p-6">
           <h2 className="text-sm font-semibold text-navy-950">Purchase price</h2>
           <p className="mt-1 text-xs text-slate-500">Only people with purchase-price permission can see this. It never appears on a customer PDF.</p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">

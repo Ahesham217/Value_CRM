@@ -42,10 +42,10 @@ export function LoginPage({ mode = "login" }: { mode?: "login" | "forgot" }) {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-4">
-      <form onSubmit={onSubmit} className="w-full max-w-md rounded-md border border-slate-200 bg-white p-5">
-        <p className="text-xs uppercase tracking-wider text-slate-500">Value Technologies</p>
-        <h1 className="mt-1 text-2xl font-semibold text-navy-950">Value CRM</h1>
+    <div className="flex min-h-screen items-center justify-center bg-canvas px-4">
+      <form onSubmit={onSubmit} className="w-full max-w-md rounded-[10px] border border-line bg-white p-8">
+        <img src="/brand-logo.png" alt="Value Technologies" className="h-10 w-auto" />
+        <h1 className="mt-6 text-[26px] font-semibold leading-8 tracking-tight text-ink">Value CRM</h1>
         <p className="mt-1 mb-5 text-sm text-slate-600">
           {mode === "forgot" ? "Request a password reset link." : "Sign in with the account an administrator created for you."}
         </p>

@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
 import { ClientCombobox } from "../components/ClientCombobox";
 import { PiItemSection } from "../components/PiItemSection";
-import { Banner, Button, Disclosure, Field, Panel, Select, TextArea, buttonClass, controlClass } from "../components/ui";
+import { Banner, Button, Disclosure, Field, Select, TextArea, buttonClass, controlClass } from "../components/ui";
 import { toCatalogueProduct } from "../lib/catalogue";
 import { generateAndDownload, isIssuedDownloadError, previewDraftPdf, saveDraft } from "../lib/documents";
 import { errorText, isConflict } from "../lib/errors";
@@ -35,6 +35,7 @@ import {
   billingSummary,
   clientOptionalSummary,
   contactLine,
+  editorFingerprint,
   moneyLabel,
   recordOptionalSummary,
   taxExclusionNotes,
@@ -60,6 +61,9 @@ export function PiEditorPage() {
   const [busy, setBusy] = useState<"save" | "generate" | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const acting = useRef(false);
+  const captureBaseline = useRef(false);
+  const [baseline, setBaseline] = useState<string | null>(null);
+  const [savedNotice, setSavedNotice] = useState(false);
   const [draftVersion, setDraftVersion] = useState(1);
   const [piNumber, setPiNumber] = useState<string | null>(null);
   const [draftOpen, setDraftOpen] = useState(true);
@@ -170,7 +174,6 @@ export function PiEditorPage() {
         vendor_archived: product.vendor_archived,
       } : null);
     }));
-    setReady(true);
     setPresets((presetResult.data ?? []) as CompanyPreset[]);
     setSalespeople((peopleResult.data ?? []) as Profile[]);
     if (pi.client_id) {
@@ -187,6 +190,8 @@ export function PiEditorPage() {
       setClientQuery("");
       setContacts([]);
     }
+    setReady(true);
+    captureBaseline.current = true;
   }
 
   useEffect(() => {
@@ -218,6 +223,57 @@ export function PiEditorPage() {
       return { error: errorText(caught), value: null };
     }
   }, [bankCharge, bankOn, discountType, discountValue, installation, installationOn, lines, shipping, shippingOn, taxEnabled, taxExcludesBank, taxExcludesInstallation, taxExcludesShipping, taxPercent]);
+
+  const fingerprint = useMemo(() => editorFingerprint({
+    presetCode,
+    piDate,
+    expiryDate,
+    clientId,
+    contactId,
+    billTo,
+    shipTo,
+    shipSame,
+    reference,
+    leadId,
+    salespersonIds: selectedSales,
+    lines: lines.map((line) => ({
+      productId: line.product?.id ?? "",
+      model: line.modelInput,
+      description: line.description,
+      unit: line.unit,
+      quantity: line.quantity,
+      unitPrice: line.unitPrice,
+    })),
+    discountType,
+    discountValue,
+    shippingOn,
+    shipping,
+    installationOn,
+    installation,
+    bankOn,
+    bankCharge,
+    taxEnabled,
+    taxPercent,
+    taxExcludesShipping,
+    taxExcludesInstallation,
+    taxExcludesBank,
+    priceBasis,
+    paymentTerms,
+    deliveryTerms,
+    warranty,
+    notes,
+  }), [
+    bankCharge, bankOn, billTo, clientId, contactId, deliveryTerms, discountType, discountValue, expiryDate,
+    installation, installationOn, leadId, lines, notes, paymentTerms, piDate, presetCode, priceBasis, reference,
+    selectedSales, shipSame, shipTo, shipping, shippingOn, taxEnabled, taxExcludesBank, taxExcludesInstallation,
+    taxExcludesShipping, taxPercent, warranty,
+  ]);
+
+  useEffect(() => {
+    if (!ready || !captureBaseline.current) return;
+    captureBaseline.current = false;
+    setBaseline(fingerprint);
+  }, [fingerprint, ready]);
 
   function payload(draftLines: DraftLineInput[]): DraftPayload {
     return {
@@ -363,7 +419,9 @@ export function PiEditorPage() {
     try {
       const result = await saveDraft(id, draftVersion, body);
       setDraftVersion(result.draft_version);
-      setMessage("Draft saved.");
+      setBaseline(fingerprint);
+      setSavedNotice(true);
+      setMessage(null);
     } catch (caught) {
       setMessage(null);
       setConflict(isConflict(caught));
@@ -512,24 +570,31 @@ export function PiEditorPage() {
   });
   const unpriced = lines.filter((line) => !isBlankPlaceholder(line) && line.unitPrice.trim() === "").length;
   const working = busy !== null || previewing;
+  const dirty = baseline !== null && fingerprint !== baseline;
+  const saveStatus = dirty ? "Unsaved changes" : savedNotice ? "Draft saved" : "";
 
   return (
-    <div className="space-y-3">
-      <div className="sticky top-12 z-30 -mx-3 border-b border-slate-200 bg-white/95 px-3 py-2 md:top-0 md:-mx-5 md:px-5">
-        <div className="flex flex-wrap items-center gap-2">
-          <Link to="/pis" className="text-sm font-medium text-navy-800 underline">Back to PIs</Link>
-          <h1 className="text-base font-semibold text-navy-950">{piNumber ?? "New PI"}</h1>
-          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-700">
-            {piNumber ? "Revision draft" : "Draft"}
-          </span>
-          <p className="min-h-5 text-sm text-emerald-800" role="status" aria-live="polite">{message ?? ""}</p>
-          <div className="ml-auto flex flex-wrap items-center gap-2">
+    <div>
+      <div className="sticky top-14 z-20 -mx-4 mb-6 bg-canvas/95 px-4 py-3 sm:-mx-6 sm:px-6 md:top-0 lg:-mx-8 lg:px-8">
+        <p className="text-[13px] text-muted">
+          <Link to="/pis" className="hover:text-ink">Proforma invoices</Link>
+          <span aria-hidden="true"> / </span>
+          <span>{piNumber ?? "New invoice"}</span>
+        </p>
+        <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <h1 className="text-[26px] font-semibold leading-8 tracking-tight text-ink">{piNumber ?? "New proforma invoice"}</h1>
+            <span className="rounded-full bg-white px-2 py-0.5 text-xs font-medium text-muted ring-1 ring-line">
+              {piNumber ? "Revision draft" : "Draft"}
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
             {canEdit ? (
-              <Button type="button" variant={canGenerate ? "secondary" : "primary"} onClick={() => void onSave()} disabled={working}>
+              <Button type="button" variant={canGenerate ? "ghost" : "primary"} onClick={() => void onSave()} disabled={working}>
                 {busy === "save" ? "Saving…" : "Save draft"}
               </Button>
             ) : null}
-            <Button type="button" variant="secondary" onClick={() => void onPreview()} disabled={working}>
+            <Button type="button" variant="accent" onClick={() => void onPreview()} disabled={working}>
               {previewing ? "Preparing preview…" : "Preview"}
             </Button>
             {canGenerate ? (
@@ -548,6 +613,9 @@ export function PiEditorPage() {
               type="button"
               className="ml-2 underline"
               onClick={() => {
+                captureBaseline.current = false;
+                setBaseline(null);
+                setSavedNotice(false);
                 setLoading(true);
                 void load(id).finally(() => setLoading(false));
               }}
@@ -557,71 +625,68 @@ export function PiEditorPage() {
           ) : null}
         </Banner>
       ) : null}
-      {!canEdit ? <Banner tone="info">You can view this draft but cannot change it.</Banner> : null}
+      {!canEdit ? <div className="mb-4"><Banner tone="info">You can view this draft but cannot change it.</Banner></div> : null}
+      {message ? <div className="mb-4"><Banner tone="info">{message}</Banner></div> : null}
 
-      <Panel title="Header and client">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Field label="Office / currency" hint={piNumber ? "This issued number keeps its office and currency. Duplicate the PI to change them." : undefined}>
+      <div className="rounded-[10px] border border-line bg-white px-5 py-6 sm:px-7 sm:py-7 lg:px-8">
+        <div className="grid gap-4 md:grid-cols-3">
+          <Field label="Office" hint={piNumber ? "This number keeps its office and currency." : undefined}>
             <Select value={presetCode} disabled={!canEdit || Boolean(piNumber)} onChange={(event) => setPresetCode(event.target.value as PresetCode | "")}>
               <option value="">Select a preset</option>
               {PRESETS.map((preset) => <option key={preset.code} value={preset.code}>{preset.label}</option>)}
             </Select>
           </Field>
-          <Field label="PI date">
+          <Field label="Date">
             <input className={controlClass} type="date" disabled={!canEdit} value={piDate} onChange={(event) => setPiDate(event.target.value)} />
           </Field>
-          <Field label="Expiry date">
+          <Field label="Valid until">
             <input className={controlClass} type="date" disabled={!canEdit} value={expiryDate} onChange={(event) => setExpiryDate(event.target.value)} />
           </Field>
-          <Field label="Lead salesperson">
-            <Select value={leadId} disabled={!canEdit} onChange={(event) => chooseLead(event.target.value)}>
-              <option value="">Select a lead</option>
-              {assignable.map((person) => (
-                <option key={person.id} value={person.id}>
-                  {person.full_name}{person.is_active ? "" : " (disabled)"}
-                </option>
-              ))}
-            </Select>
-          </Field>
         </div>
-        <p className="mt-2 text-xs text-slate-500">Prepared by {profile?.full_name || "you"} when the PI is generated. This is not editable.</p>
-        {salesSummary ? <p className="mt-1 text-sm text-slate-700">{salesSummary}</p> : null}
-        <div className="mt-3">
-          <ClientCombobox
-            query={clientQuery}
-            selected={clientRecord}
-            disabled={!canEdit}
-            onQueryChange={setClientQuery}
-            onSelect={(client) => void chooseClient(client)}
-            onClear={clearClient}
-            onRevert={() => setClientQuery(clientRecord?.company_name ?? "")}
-          />
-        </div>
-        <div className="mt-3 flex flex-wrap items-start justify-between gap-2">
-          <div className="min-w-0 text-sm">
-            {clientRecord ? (
-              <>
-                <p className="font-medium text-slate-900">{clientRecord.company_name}</p>
-                <p className="text-slate-600">
-                  {selectedContact
-                    ? contactLine(selectedContact)
-                    : contacts.length === 0
-                      ? "No contacts on this client."
-                      : "No contact selected."}
-                </p>
-              </>
-            ) : (
-              <p className="text-slate-600">No client selected.</p>
-            )}
-            <p className="mt-1 text-slate-700">{billingSummary(billTo)}</p>
-            {!shipSame ? <p className="mt-1 text-slate-700">Shipping address differs from billing.</p> : null}
+
+        <div className="mt-6 grid items-start gap-6 lg:grid-cols-[minmax(0,1.7fr)_minmax(16rem,1fr)]">
+          <div>
+            <ClientCombobox
+              query={clientQuery}
+              selected={clientRecord}
+              disabled={!canEdit}
+              onQueryChange={setClientQuery}
+              onSelect={(client) => void chooseClient(client)}
+              onClear={clearClient}
+              onRevert={() => setClientQuery(clientRecord?.company_name ?? "")}
+            />
+            <div className="mt-2 px-0.5 text-[13px] leading-5 text-muted">
+              {clientRecord ? (
+                <p>{selectedContact ? contactLine(selectedContact) : contacts.length > 1 ? "No contact selected." : contacts[0] ? contactLine(contacts[0]) : "No contacts on this client."}</p>
+              ) : (
+                <p>No client selected.</p>
+              )}
+              <p>{billingSummary(billTo)}</p>
+              {!shipSame ? <p>Shipping address differs from billing.</p> : null}
+            </div>
+            <button type="button" className="mt-1 text-sm font-medium text-primary" aria-expanded={editingClient} onClick={() => setEditingClient((current) => !current)}>
+              {editingClient ? "Hide details" : canEdit ? "Edit details" : "View details"}
+            </button>
           </div>
-          <Button type="button" variant="secondary" aria-expanded={editingClient} onClick={() => setEditingClient((current) => !current)}>
-            {editingClient ? "Hide details" : canEdit ? "Edit details" : "View details"}
-          </Button>
+          <div>
+            <Field label="Lead salesperson">
+              <Select value={leadId} disabled={!canEdit} onChange={(event) => chooseLead(event.target.value)}>
+                <option value="">Select a lead</option>
+                {assignable.map((person) => (
+                  <option key={person.id} value={person.id}>
+                    {person.full_name}{person.is_active ? "" : " (disabled)"}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <p className="mt-4 text-[13px] text-muted">Prepared by</p>
+            <p className="text-sm text-ink">{profile?.full_name || "Recorded when generated"}</p>
+            {salesSummary ? <p className="mt-2 text-[13px] text-muted">{salesSummary}</p> : null}
+          </div>
         </div>
+
         {editingClient ? (
-          <div className="mt-3 grid gap-3">
+          <div className="mt-4 grid max-w-3xl gap-4">
             {contacts.length > 1 ? (
               <Field label="Contact">
                 <Select value={contactId} disabled={!canEdit} onChange={(event) => setContactId(event.target.value)}>
@@ -631,11 +696,11 @@ export function PiEditorPage() {
               </Field>
             ) : null}
             {contacts.length === 1 && !selectedContact ? (
-              <button type="button" className="text-left text-sm text-navy-800 underline" onClick={() => setContactId(contacts[0]?.id ?? "")}>
+              <button type="button" className="text-left text-sm font-medium text-primary" onClick={() => setContactId(contacts[0]?.id ?? "")}>
                 Use {contacts[0]?.name || "this contact"}
               </button>
             ) : null}
-            <Field label="Billing address" hint="Used on this PI only. The client record is not changed.">
+            <Field label="Billing address">
               <TextArea
                 disabled={!canEdit}
                 value={billTo}
@@ -647,8 +712,10 @@ export function PiEditorPage() {
             </Field>
           </div>
         ) : null}
+        <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2">
         <Disclosure
-          title="More client details"
+          quiet
+          title="Shipping & reference"
           summary={clientSummary}
           open={clientDetailsOpen}
           onToggle={() => setClientDetailsOpen((current) => !current)}
@@ -678,6 +745,7 @@ export function PiEditorPage() {
           </div>
         </Disclosure>
         <Disclosure
+          quiet
           title="Additional salespeople"
           summary={salesSummary}
           open={salesOpen}
@@ -710,8 +778,9 @@ export function PiEditorPage() {
             })}
           </div>
         </Disclosure>
-      </Panel>
+        </div>
 
+        <div className="mt-8 border-t border-line pt-6">
       <PiItemSection
         lines={lines}
         currency={currency}
@@ -724,20 +793,21 @@ export function PiEditorPage() {
           setMessage(text);
         }}
       />
+        </div>
 
-      <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_22rem]">
-        <section className="order-2 rounded-md border border-slate-200 bg-white lg:order-1">
-          <div className="border-b border-slate-200 px-3 py-2">
-            <h2 className="text-sm font-semibold text-navy-950">Commercial terms</h2>
+        <div className="mt-8 grid items-start gap-8 border-t border-line pt-6 lg:grid-cols-[minmax(0,1fr)_22.5rem]">
+        <section className="order-2 lg:order-1">
+          <h2 className="text-[15px] font-semibold text-ink">Commercial terms</h2>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <Field label="Payment">
+              <TextArea rows={2} disabled={!canEdit} value={paymentTerms} onChange={(event) => setPaymentTerms(event.target.value)} />
+            </Field>
+            <Field label="Delivery">
+              <TextArea rows={2} disabled={!canEdit} value={deliveryTerms} onChange={(event) => setDeliveryTerms(event.target.value)} />
+            </Field>
           </div>
-          <div className="grid gap-3 p-3">
-            <Field label="Payment terms">
-              <TextArea disabled={!canEdit} value={paymentTerms} onChange={(event) => setPaymentTerms(event.target.value)} />
-            </Field>
-            <Field label="Delivery terms">
-              <TextArea disabled={!canEdit} value={deliveryTerms} onChange={(event) => setDeliveryTerms(event.target.value)} />
-            </Field>
-            <Disclosure title="More commercial terms" summary={termsSummary} open={termsOpen} onToggle={() => setTermsOpen((current) => !current)}>
+          <div className="mt-3">
+            <Disclosure quiet title="More commercial terms" summary={termsSummary} open={termsOpen} onToggle={() => setTermsOpen((current) => !current)}>
               <div className="grid gap-3">
                 <Field label="Price basis">
                   <TextArea disabled={!canEdit} value={priceBasis} onChange={(event) => setPriceBasis(event.target.value)} />
@@ -752,16 +822,12 @@ export function PiEditorPage() {
             </Disclosure>
           </div>
         </section>
-        <section className="order-1 rounded-md border border-slate-200 bg-white lg:order-2">
-          <div className="border-b border-slate-200 px-3 py-2">
-            <h2 className="text-sm font-semibold text-navy-950">Totals</h2>
-          </div>
-          <div className="p-3 text-sm">
-            <p className="text-slate-600">Currency: {currency ?? "Not chosen"}</p>
-            {totals.error ? <p className="mt-2 text-red-800">{totals.error}</p> : null}
-            <div className="mt-2 flex items-baseline justify-between gap-3">
-              <span>Subtotal</span>
-              <span className="tabular-nums">{moneyLabel(totals.value?.subtotal, currency)}</span>
+        <section className="order-1 lg:order-2">
+          <div className="text-sm">
+            {totals.error ? <p className="mb-2 text-red-800">{totals.error}</p> : null}
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-muted">Subtotal</span>
+              <span className="tabular-nums text-ink">{moneyLabel(totals.value?.subtotal, currency)}</span>
             </div>
             {rows.map((row) => (
               <div key={row.key} className="mt-1 flex items-baseline justify-between gap-3">
@@ -788,17 +854,10 @@ export function PiEditorPage() {
                 <span className="tabular-nums">{formatMoney(totals.value.taxableBase, currency)}</span>
               </div>
             ) : null}
-            {exclusionNotes.map((note) => <p key={note} className="mt-1 text-xs text-slate-600">{note}</p>)}
-            <div className="mt-2 flex items-baseline justify-between gap-3 border-t border-slate-200 pt-2 font-semibold">
-              <span>Grand total</span>
-              <span className="tabular-nums">{moneyLabel(totals.value?.grandTotal, currency)}</span>
-            </div>
-            {unpriced > 0 ? (
-              <p className="mt-2 text-red-800">
-                {unpriced === 1 ? "1 item still needs a selling price." : `${unpriced} items still need a selling price.`}
-              </p>
-            ) : null}
+            {exclusionNotes.map((note) => <p key={note} className="mt-1 text-xs text-muted">{note}</p>)}
+            <div className="mt-3">
             <Disclosure
+              quiet
               title={rows.length > 0 ? "Edit discount or charges" : "Add discount or charges"}
               open={adjustmentsOpen}
               onToggle={() => setAdjustmentsOpen((current) => !current)}
@@ -848,8 +907,21 @@ export function PiEditorPage() {
                 ) : null}
               </div>
             </Disclosure>
+            </div>
+            <div className="mt-4 flex items-baseline justify-between gap-3 border-t border-line pt-3">
+              <span className="font-semibold text-ink">Total</span>
+              <span className="text-[22px] font-semibold leading-7 tabular-nums text-ink">{moneyLabel(totals.value?.grandTotal, currency)}</span>
+            </div>
+            {!currency ? <p className="mt-1 text-xs text-muted">Currency not chosen.</p> : null}
+            {unpriced > 0 ? (
+              <p className="mt-2 text-red-800">
+                {unpriced === 1 ? "1 item still needs a selling price." : `${unpriced} items still need a selling price.`}
+              </p>
+            ) : null}
           </div>
         </section>
+      </div>
+        <p className="mt-6 min-h-5 text-[13px] text-muted" role="status" aria-live="polite">{saveStatus}</p>
       </div>
     </div>
   );

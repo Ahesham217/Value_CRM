@@ -153,6 +153,21 @@ Historical decision dates are **unknown** where the repository shows the impleme
 - Consequences or limitations: Production continues to use `wrangler deploy`. The generated configuration must retain the preview block and built assets directory. A preview configured with the production Supabase URL shares live data; it is not a separate test database. Preview invitation/reset redirects require allowlisting.
 - References: `wrangler.jsonc`, README branch previews, PR #6.
 
+## DEC-014
+
+- Decision date: 2026-10-19
+- Documented: 2026-10-19
+- Status: Implemented
+- Decision: Present a draft PI as one document on a light neutral page, with a restrained blue accent and shared control sizes, while keeping everyday fields visible and optional fields behind labelled actions.
+- Reason: The first compact layout still looked like separate form cards, with uneven spacing and weak alignment. Staff need the same interaction model in a more deliberate business-document layout.
+- Consequences or limitations:
+  - The editor keeps office, dates, client, lead salesperson, items, payment, delivery, and totals on one white surface. Shipping and reference, additional salespeople, discounts and charges, and further terms stay optional.
+  - Applied optional values remain visible as summaries. Closing a section does not clear its value.
+  - Save draft stays explicit. The screen says “Draft saved” only after a successful save, and “Unsaved changes” after a later edit. There is no autosave.
+  - Lists, detail, catalogue forms, settings, and sign-in use the same type scale, control height, and surface treatment. PDF rendering is unchanged.
+  - The Value Technologies mark is the application icon and sign-in mark. It is not written into invoice data or PDFs.
+- References: `src/index.css`, `src/components/Shell.tsx`, `src/components/ui.tsx`, `src/pages/PiEditor.tsx`, `src/pages/PiItemSection.tsx`, `public/favicon.png`, `public/brand-logo.png`
+
 
 ### DEC-013 implementation follow-up — 2026-10-19
 

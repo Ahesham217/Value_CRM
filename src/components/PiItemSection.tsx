@@ -21,7 +21,7 @@ import type { CurrencyCode } from "../lib/types";
 import { descriptionSummary } from "../lib/workspace-view";
 import { CreateCatalogueProduct } from "./CreateCatalogueProduct";
 import { ModelCombobox } from "./ModelCombobox";
-import { Button, Menu, controlClass } from "./ui";
+import { Button, Menu, cellControlClass, controlClass } from "./ui";
 
 function GripIcon() {
   return (
@@ -37,7 +37,7 @@ function GripIcon() {
 }
 
 const rowGrid =
-  "grid grid-cols-[2rem_minmax(10rem,1.2fr)_minmax(12rem,1.8fr)_4.75rem_4.75rem_6.25rem_6.5rem_auto] items-start gap-x-2";
+  "grid grid-cols-[1.75rem_minmax(10.5rem,1.15fr)_minmax(14rem,2.4fr)_4.5rem_5.5rem_7.25rem_7.75rem_2.25rem] items-center gap-x-3";
 
 function SortableItem({
   line,
@@ -107,13 +107,13 @@ function SortableItem({
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       role="row"
-      className={`${rowGrid} border-t border-slate-100 px-2 py-1.5 ${isDragging ? "relative z-10 bg-white shadow-md" : ""} ${warning ? "bg-amber-50" : ""}`}
+      className={`${rowGrid} min-h-14 border-b border-line px-3 py-2 ${isDragging ? "relative z-10 bg-white shadow-sm" : ""} ${warning ? "bg-amber-50" : ""}`}
     >
       <div role="cell" className="pt-1">
         {canEdit ? (
           <button
             type="button"
-            className="inline-flex h-9 w-8 cursor-grab items-center justify-center rounded-md text-slate-500 touch-none hover:bg-slate-100"
+            className="inline-flex h-8 w-7 cursor-grab items-center justify-center rounded-md text-muted touch-none hover:bg-canvas"
             {...attributes}
             {...listeners}
             aria-label={`Drag to reorder item ${itemNumber}`}
@@ -130,6 +130,7 @@ function SortableItem({
             disabled={false}
             canCreate={canManageProducts}
             compact
+            plain
             label={`Model for item ${itemNumber}`}
             autoFocus={autoFocus}
             onAutoFocused={onAutoFocused}
@@ -139,12 +140,10 @@ function SortableItem({
             onRevert={() => onChange(revertModelInput(line))}
           />
         ) : (
-          <input className={controlClass} readOnly aria-label={`Model for item ${itemNumber}`} value={line.modelInput} />
+          <input className={`${cellControlClass} font-medium`} readOnly aria-label={`Model for item ${itemNumber}`} value={line.modelInput} />
         )}
-        <p className="mt-0.5 truncate text-xs text-slate-500">
-          {line.product?.vendorName
-            ? `Vendor: ${line.product.vendorName}`
-            : "Vendor comes from the product"}
+        <p className="mt-0.5 truncate px-1.5 text-xs text-muted">
+          {line.product?.vendorName || (line.modelInput.trim() ? "No vendor" : "")}
         </p>
       </div>
       <div role="cell" className="min-w-0">
@@ -153,7 +152,7 @@ function SortableItem({
             <textarea
               ref={descriptionRef}
               rows={4}
-              className={`${controlClass} h-auto min-h-16 py-1.5`}
+              className={`${controlClass} h-auto min-h-16 py-2`}
               aria-label={`Description for item ${itemNumber}`}
               disabled={!canEdit}
               value={line.description}
@@ -166,17 +165,17 @@ function SortableItem({
         ) : (
           <button
             type="button"
-            className="line-clamp-2 min-h-9 w-full rounded-md px-1 py-1.5 text-left text-sm hover:bg-slate-50"
+            className="line-clamp-2 min-h-9 w-full rounded-md px-1.5 py-1.5 text-left text-sm text-ink hover:bg-canvas"
             aria-expanded={false}
             onClick={() => setEditingDescription(true)}
           >
-            {summary || <span className="text-slate-500">{canEdit ? "Add description" : "No description"}</span>}
+            {summary || <span className="text-muted">{canEdit ? "Add description" : "No description"}</span>}
           </button>
         )}
       </div>
       <div role="cell">
         <input
-          className={`${controlClass} text-right tabular-nums`}
+          className={`${cellControlClass} text-right`}
           inputMode="decimal"
           aria-label={`Quantity for item ${itemNumber}`}
           disabled={!canEdit}
@@ -186,7 +185,7 @@ function SortableItem({
       </div>
       <div role="cell">
         <input
-          className={controlClass}
+          className={cellControlClass}
           aria-label={`Unit for item ${itemNumber}`}
           disabled={!canEdit}
           value={line.unit}
@@ -195,7 +194,7 @@ function SortableItem({
       </div>
       <div role="cell">
         <input
-          className={`${controlClass} text-right tabular-nums`}
+          className={`${cellControlClass} text-right`}
           inputMode="decimal"
           aria-label={`Unit price for item ${itemNumber}`}
           disabled={!canEdit}
@@ -203,25 +202,20 @@ function SortableItem({
           onChange={(event) => onChange({ ...line, unitPrice: event.target.value })}
         />
       </div>
-      <div role="cell" className="pt-2 text-right text-sm tabular-nums text-slate-800">
+      <div role="cell" className="pr-1 text-right text-sm font-medium tabular-nums text-ink">
         {lineTotal || "—"}
       </div>
-      <div role="cell" className="flex items-center justify-end gap-1">
+      <div role="cell" className="flex justify-end">
         {canEdit ? (
-          <>
-            {count > 1 ? (
-              <Menu
-                label="Reorder"
-                items={[
-                  { label: "Move up", onSelect: () => onMove(-1), disabled: index === 0 },
-                  { label: "Move down", onSelect: () => onMove(1), disabled: index === count - 1 },
-                ]}
-              />
-            ) : null}
-            <Button type="button" variant="ghost" className="px-2" aria-label={`Remove item ${itemNumber}`} onClick={onRemove}>
-              Remove
-            </Button>
-          </>
+          <Menu
+            appearance="quiet"
+            label={`Actions for item ${itemNumber}`}
+            items={[
+              { label: "Move up", onSelect: () => onMove(-1), disabled: index === 0 },
+              { label: "Move down", onSelect: () => onMove(1), disabled: index === count - 1 },
+              { label: "Remove", onSelect: onRemove, tone: "danger" },
+            ]}
+          />
         ) : null}
       </div>
       {warning ? (
@@ -293,23 +287,20 @@ export function PiItemSection({
   }
 
   return (
-    <section className="rounded-md border border-slate-200 bg-white" aria-label="Items">
-      <div className="border-b border-slate-200 px-3 py-2">
-        <h2 className="text-sm font-semibold text-navy-950">Items</h2>
-      </div>
-      <div className="p-2">
-        {lines.length === 0 ? <p className="px-2 py-3 text-sm text-slate-600">No items yet.</p> : (
-          <div className="overflow-x-auto rounded-md border border-slate-200">
+    <section aria-label="Items">
+      <div>
+        {lines.length === 0 ? <p className="py-6 text-sm text-muted">No items yet.</p> : (
+          <div className="overflow-x-auto">
             <div className="min-w-[52rem]" role="table" aria-label="PI items">
-              <div role="row" className={`${rowGrid} bg-slate-50 px-2 py-1.5 text-xs font-medium text-slate-500`}>
+              <div role="row" className={`${rowGrid} border-b border-line px-3 py-2 text-[13px] font-medium text-muted`}>
                 <div role="columnheader"><span className="sr-only">Reorder</span></div>
-                <div role="columnheader">Model</div>
+                <div role="columnheader">Item</div>
                 <div role="columnheader">Description</div>
                 <div role="columnheader" className="text-right">Qty</div>
                 <div role="columnheader">Unit</div>
                 <div role="columnheader" className="text-right">Unit price{currency ? ` (${currency})` : ""}</div>
-                <div role="columnheader" className="text-right">Total</div>
-                <div role="columnheader" className="text-right"><span className="sr-only">Actions</span></div>
+                <div role="columnheader" className="text-right">Amount</div>
+                <div role="columnheader"><span className="sr-only">Actions</span></div>
               </div>
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
                 <SortableContext items={lines.map((line) => line.key)} strategy={verticalListSortingStrategy}>
@@ -337,9 +328,9 @@ export function PiItemSection({
           </div>
         )}
         {canEdit ? (
-          <div className="mt-2">
-            <Button ref={addRef} type="button" onClick={addItem}>Add an item</Button>
-          </div>
+          <Button ref={addRef} type="button" variant="quiet" className="mt-3 px-0" onClick={addItem}>
+            + Add an item
+          </Button>
         ) : null}
       </div>
     </section>

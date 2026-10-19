@@ -182,7 +182,7 @@ export function PiDetailPage() {
         <div className="min-w-0">
           <Link to="/pis" className="text-sm font-medium text-navy-800 underline">Back to PIs</Link>
           <div className="mt-1 flex flex-wrap items-center gap-2">
-            <h1 className="text-lg font-semibold text-navy-950">{pi.pi_number ?? "Draft"}</h1>
+            <h1 className="text-[26px] font-semibold leading-8 tracking-tight text-ink">{pi.pi_number ?? "Draft"}</h1>
             <StatusBadge status={listRow?.display_status ?? (versions.length ? "issued" : "draft")} />
           </div>
           <p className="mt-1 text-sm text-slate-700">{listRow?.client_name || "No client"}</p>
@@ -204,7 +204,7 @@ export function PiDetailPage() {
       {message ? <Banner tone="success">{message}</Banner> : null}
       {pi.draft_open && versions.length > 0 ? <Banner tone="info">A revision draft is open. Download uses the latest issued version.</Banner> : null}
       {statusOpen ? (
-        <div className="flex flex-wrap items-end gap-2 rounded-md border border-slate-200 bg-white p-3">
+        <div className="flex flex-wrap items-end gap-2 rounded-[10px] border border-line bg-white p-6">
           <label className="text-sm">
             <span className="mb-1 block font-medium text-slate-700">Change status</span>
             <Select value={status} onChange={(event) => setStatus(event.target.value as TrackingStatus)} disabled={!canEdit && !canGenerate}>
@@ -217,7 +217,7 @@ export function PiDetailPage() {
           {canEdit || canGenerate ? <Button type="button" variant="secondary" onClick={() => void changeStatus()}>Update status</Button> : null}
         </div>
       ) : null}
-      <section className="rounded-md border border-slate-200 bg-white p-3">
+      <section className="rounded-[10px] border border-line bg-white p-6">
         <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
           <div><dt className="text-xs text-slate-500">PI date</dt><dd>{formatDate(pi.pi_date)}</dd></div>
           <div><dt className="text-xs text-slate-500">Expiry date</dt><dd>{formatDate(pi.expiry_date)}</dd></div>
@@ -240,9 +240,9 @@ export function PiDetailPage() {
           {exclusionNotes.map((note) => <p key={note} className="mt-1 text-xs text-slate-600">{note}</p>)}
         </div>
       </section>
-      <section className="rounded-md border border-slate-200 bg-white">
-        <div className="border-b border-slate-200 px-3 py-2">
-          <h2 className="text-sm font-semibold text-navy-950">{pi.draft_open && versions.length > 0 ? "Draft items" : "Items"}</h2>
+      <section className="rounded-[10px] border border-line bg-white">
+        <div className="border-b border-line px-6 py-4">
+          <h2 className="text-[15px] font-semibold text-ink">{pi.draft_open && versions.length > 0 ? "Draft items" : "Items"}</h2>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
@@ -271,7 +271,7 @@ export function PiDetailPage() {
           </table>
         </div>
       </section>
-      <section className="rounded-md border border-slate-200 bg-white px-3">
+      <section className="rounded-[10px] border border-line bg-white px-6">
         <Disclosure title="Version history" summary={historySummary} open={historyOpen} onToggle={() => setHistoryOpen((current) => !current)}>
           {versions.length === 0 ? <p className="text-sm text-slate-600">Nothing has been issued yet. Generate the draft to allocate a permanent number.</p> : (
             <ul className="divide-y divide-slate-100">

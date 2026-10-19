@@ -222,7 +222,7 @@ export function ClientDetailPage() {
       {error ? <Banner tone="error">{error}</Banner> : null}
       {message ? <Banner tone="success">{message}</Banner> : null}
       {!manage ? <Banner tone="info">You can view this client. An administrator has not given you permission to change clients.</Banner> : null}
-      <section className="rounded-md border border-slate-200 bg-white p-3">
+      <section className="rounded-[10px] border border-line bg-white p-6">
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Company name">
             <input className={controlClass} required value={companyName} disabled={!manage} onChange={(event) => setCompanyName(event.target.value)} />
@@ -282,7 +282,7 @@ export function ClientDetailPage() {
           {additional.length === 0 ? <p className="text-sm text-slate-600">No additional contacts.</p> : (
             <div className="space-y-3">
               {additional.map((contact) => (
-                <div key={contact.key} className="rounded-md border border-slate-200 p-2">
+                <div key={contact.key} className="rounded-lg border border-line p-3">
                   {contactFields(contact)}
                   {manage ? (
                     <Button className="mt-2" type="button" variant="ghost" onClick={() => setContacts((current) => current.filter((item) => item.key !== contact.key))}>
@@ -296,7 +296,7 @@ export function ClientDetailPage() {
         </Disclosure>
       </section>
       {!isNew ? (
-        <section className="rounded-md border border-slate-200 bg-white px-3">
+        <section className="rounded-[10px] border border-line bg-white px-6">
           <Disclosure
             title="Related PIs"
             summary={related.length === 0 ? "None visible to you" : `${related.length} PI${related.length === 1 ? "" : "s"}`}

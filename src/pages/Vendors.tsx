@@ -60,7 +60,7 @@ export function VendorsPage() {
       {loading ? <p className="text-sm text-slate-600">Loading vendors…</p> : null}
       {!loading && rows.length === 0 ? <EmptyState title="No vendors yet" body={manage ? "Use Add vendor before linking products to it." : "No vendors are available."} /> : null}
       {rows.length > 0 ? (
-        <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
+        <div className="overflow-x-auto rounded-[10px] border border-line bg-white">
           <table className="min-w-full text-left text-sm">
             <thead className="bg-slate-50">
               <tr>
@@ -73,7 +73,7 @@ export function VendorsPage() {
               {rows.map((vendor) => (
                 <tr
                   key={vendor.id}
-                  className="cursor-pointer border-t border-slate-100 hover:bg-slate-50"
+                  className="cursor-pointer border-t border-slate-100 hover:bg-canvas"
                   onClick={(event) => {
                     if (event.target instanceof Element && event.target.closest("a, button")) return;
                     navigate(`/vendors/${vendor.id}`);

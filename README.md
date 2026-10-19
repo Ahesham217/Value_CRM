@@ -4,7 +4,7 @@ Internal application for Value Technologies. Staff save clients, vendors, and pr
 
 The hosted database is the Supabase project **Value CRM** (`idhqrvrpzlkpyyqlkozl`, eu-west-1) in the Value Technologies organization. Verifications and Value-Website are separate applications and were not modified.
 
-PIs are the home page. A compact sidebar also opens Clients, Vendors, and Products. Settings is shown only to administrators, and is split into company and bank presets, default terms, and users. Everyday PI fields stay on one page: office and currency, client, dates, lead salesperson, items, payment and delivery terms, and totals. A separate shipping address, additional salespeople, discounts and charges, and the other commercial terms sit in labelled sections. A saved value stays visible as a summary when its section is closed. On the PI list, search, status, and New PI stay visible. Office, currency, salesperson, and date range are under Filters.
+PIs are the home page. A compact sidebar also opens Clients, Vendors, and Products. Settings is shown only to administrators, and is split into company and bank presets, default terms, and users. A draft is one document: office and currency, client, dates, lead salesperson, items, payment and delivery terms, and totals. Shipping and reference, additional salespeople, discounts and charges, and the other commercial terms open from quiet actions. A saved value stays visible as a summary when its section is closed. Saving a draft is explicit. On the PI list, search, status, and New PI stay visible. Office, currency, salesperson, and date range are under Filters.
 
 ## Project decisions
 
@@ -137,7 +137,7 @@ Default commercial terms are copied onto each new draft and stay editable on tha
 
 Each item on a draft is a catalogue product. Add it under the last line, search by model, and select it, or create a new catalogue product without leaving the PI if you manage products. Model names are unique across the catalogue, including archived products; comparison ignores capitalisation and surrounding spaces, and the saved spelling is what the PI shows. The line copies the product's vendor, description, unit, and the default selling price for the PI currency. A missing price stays blank and an explicit zero stays zero. There is no currency conversion. Description, unit, quantity, and selling price can then be edited for that PI only. Changing the model selects or creates a different product; it does not rename the previous one. Vendor cannot be changed independently of the product. Brand is not required and is not added to the description.
 
-Drag the row handle, or open Reorder and choose Move up or Move down, to set the order. That order is kept on the draft and used by preview, the issued PDF, duplicates, and later revisions. Older issued versions keep the order they were generated with.
+Drag the row handle, or open the row actions and choose Move up or Move down, to set the order. That order is kept on the draft and used by preview, the issued PDF, duplicates, and later revisions. Older issued versions keep the order they were generated with.
 
 A draft line from before this rule that has no matching product stays on the draft and is marked until someone selects or creates a product. It cannot be saved again or generated until then. The migration does not fill those lines in, and it does not change issued snapshots.
 

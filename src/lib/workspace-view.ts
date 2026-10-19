@@ -145,6 +145,54 @@ export function adjustmentRows(input: {
   return rows;
 }
 
+export type EditorSnapshot = {
+  presetCode: string;
+  piDate: string;
+  expiryDate: string;
+  clientId: string;
+  contactId: string;
+  billTo: string;
+  shipTo: string;
+  shipSame: boolean;
+  reference: string;
+  leadId: string;
+  salespersonIds: string[];
+  lines: Array<{
+    productId: string;
+    model: string;
+    description: string;
+    unit: string;
+    quantity: string;
+    unitPrice: string;
+  }>;
+  discountType: string;
+  discountValue: string;
+  shippingOn: boolean;
+  shipping: string;
+  installationOn: boolean;
+  installation: string;
+  bankOn: boolean;
+  bankCharge: string;
+  taxEnabled: boolean;
+  taxPercent: string;
+  taxExcludesShipping: boolean;
+  taxExcludesInstallation: boolean;
+  taxExcludesBank: boolean;
+  priceBasis: string;
+  paymentTerms: string;
+  deliveryTerms: string;
+  warranty: string;
+  notes: string;
+};
+
+/** Stable text for comparing a draft with the last loaded or saved copy. */
+export function editorFingerprint(snapshot: EditorSnapshot): string {
+  return JSON.stringify({
+    ...snapshot,
+    salespersonIds: [...snapshot.salespersonIds].sort(),
+  });
+}
+
 export function taxExclusionNotes(input: {
   taxEnabled: boolean;
   shippingOn: boolean;

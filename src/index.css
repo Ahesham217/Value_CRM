@@ -1,19 +1,27 @@
 @import "tailwindcss";
 
 @theme {
-  --color-navy-950: #0b1c2e;
-  --color-navy-900: #12324d;
-  --color-navy-800: #1a4468;
-  --color-navy-100: #e7eef5;
+  --color-canvas: #f5f7fa;
+  --color-ink: #122033;
+  --color-muted: #5c6b80;
+  --color-line: #e6ebf2;
+  --color-primary: #2458d3;
+  --color-primary-hover: #1c49b5;
+  --color-primary-soft: #e8effc;
+  --color-navy-950: #122033;
+  --color-navy-900: #2458d3;
+  --color-navy-800: #1c49b5;
+  --color-navy-100: #e8effc;
   --font-sans: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
-  background: #f5f6f8;
-  color: #1c2833;
+  background: var(--color-canvas);
+  color: var(--color-ink);
   font-family: var(--font-sans);
+  font-size: 14px;
 }
 
 button,
@@ -24,13 +32,13 @@ textarea {
 }
 
 :focus-visible {
-  outline: 2px solid #1a4468;
+  outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
 
 input[type="checkbox"],
 input[type="radio"] {
-  accent-color: #12324d;
+  accent-color: var(--color-primary);
   width: 1rem;
   height: 1rem;
 }

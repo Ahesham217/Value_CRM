@@ -130,7 +130,7 @@ export function PiListPage() {
         </Button>
       </div>
       {filtersOpen ? (
-        <div id={filtersId} className="mb-3 grid gap-3 rounded-md border border-slate-200 bg-white p-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div id={filtersId} className="mb-3 grid gap-3 rounded-[10px] border border-line bg-white p-4 sm:grid-cols-2 lg:grid-cols-4">
           <label className="text-sm">
             <span className="mb-1 block font-medium text-slate-700">Office</span>
             <Select value={office} onChange={(event) => { setOffice(event.target.value); setPage(1); }}>
@@ -179,7 +179,7 @@ export function PiListPage() {
         <EmptyState title="No proforma invoices" body={canEdit ? "Use New PI to start a draft, or change the filters." : "No proforma invoices match."} />
       ) : null}
       {rows.length > 0 ? (
-        <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
+        <div className="overflow-x-auto rounded-[10px] border border-line bg-white">
           <table className="min-w-full text-left text-sm">
             <thead className="bg-slate-50">
               <tr>
@@ -196,7 +196,7 @@ export function PiListPage() {
               {rows.map((row) => (
                 <tr
                   key={row.id}
-                  className="cursor-pointer border-t border-slate-100 hover:bg-slate-50"
+                  className="cursor-pointer border-t border-slate-100 hover:bg-canvas"
                   onClick={(event) => {
                     if (event.target instanceof Element && event.target.closest("a, button")) return;
                     navigate(`/pis/${row.id}`);
