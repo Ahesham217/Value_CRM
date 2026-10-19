@@ -134,11 +134,12 @@ function parties(snapshot: PiSnapshot, layout: IssuedLayoutVersion): Content {
   };
 }
 
+// Customer-facing attribution is an explicit presentation/privacy rule for all
+// layouts, including legacy snapshots. Internal preparer data remains untouched.
 function attribution(snapshot: PiSnapshot): Content {
   return {
-    columns: [
-      metaRow("Lead salesperson", [snapshot.sales.lead_name, snapshot.sales.lead_phone].filter(Boolean).join(" · ")),
-      metaRow("Prepared by", snapshot.sales.prepared_by),
+    stack: [
+      metaRow("Contact person", [snapshot.sales.lead_name, snapshot.sales.lead_phone].filter(Boolean).join(" · ")),
     ],
     margin: [0, 6, 0, 2],
   };
