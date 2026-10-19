@@ -11,7 +11,7 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: #f3f5f8;
+  background: #f5f6f8;
   color: #1c2833;
   font-family: var(--font-sans);
 }
@@ -26,4 +26,11 @@ textarea {
 :focus-visible {
   outline: 2px solid #1a4468;
   outline-offset: 2px;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: #12324d;
+  width: 1rem;
+  height: 1rem;
 }

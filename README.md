@@ -4,6 +4,8 @@ Internal application for Value Technologies. Staff save clients, vendors, and pr
 
 The hosted database is the Supabase project **Value CRM** (`idhqrvrpzlkpyyqlkozl`, eu-west-1) in the Value Technologies organization. Verifications and Value-Website are separate applications and were not modified.
 
+PIs are the home page. A compact sidebar also opens Clients, Vendors, and Products. Settings is shown only to administrators, and is split into company and bank presets, default terms, and users. Everyday PI fields stay on one page: office and currency, client, dates, lead salesperson, items, payment and delivery terms, and totals. A separate shipping address, additional salespeople, discounts and charges, and the other commercial terms sit in labelled sections. A saved value stays visible as a summary when its section is closed. On the PI list, search, status, and New PI stay visible. Office, currency, salesperson, and date range are under Filters.
+
 ## Project decisions
 
 Significant product and technical decisions are recorded in [docs/decision-log.md](docs/decision-log.md). Update that log when a change affects business rules, architecture, permissions, document generation, or storage.
@@ -98,12 +100,12 @@ Dashboard SQL runs as `postgres`, which the profile trigger allows. A signed-in 
 
 ## Invitations and password resets
 
-Settings → Users is admin-only. It calls the `admin-users` edge function, which checks that the caller is an active administrator and then uses the service role.
+Settings is admin-only. It is organised as Company and bank, Default terms, and Users and permissions. Users calls the `admin-users` edge function, which checks that the caller is an active administrator and then uses the service role.
 
 - **Invite by email** sends Supabase's invite link. On the free plan, the built-in mailer only delivers to addresses you have authorized, and only a small number of messages. For real staff mail, configure custom SMTP under Authentication → Emails.
 - **Create with a temporary password** confirms the email immediately. Share the password through a channel outside the app. It is not stored in Value CRM.
 - A disabled user keeps their name on issued invoices. The function sets `is_active` false, bans sign-in, and deletes refresh sessions. An access token that has not expired yet still cannot read company rows, because every policy checks the live profile.
-- Password reset is on the sign-in page. Add these redirect URLs under Authentication → URL configuration, plus the production origin when you have one:
+- Password reset is on the sign-in page. Add these redirect URLs under Authentication → URL configuration, plus the production origin and its `/reset-password` path. The production URL is not recorded in this repository:
   - `http://localhost:5173`
   - `http://localhost:5173/reset-password`
 
@@ -135,11 +137,11 @@ Default commercial terms are copied onto each new draft and stay editable on tha
 
 Each item on a draft is a catalogue product. Add it under the last line, search by model, and select it, or create a new catalogue product without leaving the PI if you manage products. Model names are unique across the catalogue, including archived products; comparison ignores capitalisation and surrounding spaces, and the saved spelling is what the PI shows. The line copies the product's vendor, description, unit, and the default selling price for the PI currency. A missing price stays blank and an explicit zero stays zero. There is no currency conversion. Description, unit, quantity, and selling price can then be edited for that PI only. Changing the model selects or creates a different product; it does not rename the previous one. Vendor cannot be changed independently of the product. Brand is not required and is not added to the description.
 
-Drag the row handle, or use Move up and Move down, to set the order. That order is kept on the draft and used by preview, the issued PDF, duplicates, and later revisions. Older issued versions keep the order they were generated with.
+Drag the row handle, or open Reorder and choose Move up or Move down, to set the order. That order is kept on the draft and used by preview, the issued PDF, duplicates, and later revisions. Older issued versions keep the order they were generated with.
 
 A draft line from before this rule that has no matching product stays on the draft and is marked until someone selects or creates a product. It cannot be saved again or generated until then. The migration does not fill those lines in, and it does not change issued snapshots.
 
-Drafts are editable. **Generate & Download** calls the database generation function, which allocates the permanent number and stores version 0 as an immutable snapshot. The browser then renders the PDF from that returned snapshot and downloads it. The PDF is not uploaded. The number looks like `EG-2026-00001` or `AE-2026-00001`. Egypt has one sequence. UAE shares one sequence across USD and EUR. The year comes from the PI date and the sequence resets each year. Allocation is a locked counter inside the database transaction. If rendering or the browser download fails after the database has issued the PI, the number and version stay. The message says the PI was issued and points to **Download** in version history. Trying again from there renders the same snapshot and does not allocate another number or revision.
+Drafts are editable. **Generate PI** calls the database generation function, which allocates the permanent number and stores version 0 as an immutable snapshot. The browser then renders the PDF from that returned snapshot and downloads it. The PDF is not uploaded. The number looks like `EG-2026-00001` or `AE-2026-00001`. Egypt has one sequence. UAE shares one sequence across USD and EUR. The year comes from the PI date and the sequence resets each year. Allocation is a locked counter inside the database transaction. If rendering or the browser download fails after the database has issued the PI, the number and version stay. The message says the PI was issued and points to **Download** in version history. Trying again from there renders the same snapshot and does not allocate another number or revision.
 
 Issued office, currency, year, and base number cannot be revised. Duplicate the PI when those need to change.
 
@@ -191,7 +193,7 @@ Issued numbers, snapshots, totals, and "prepared by" are written only by databas
 
 ## Cloudflare
 
-`wrangler.jsonc` targets Workers static assets with SPA fallback (`assets.not_found_handling` = `single-page-application`), a thin Worker entry, compatibility date 2026-10-18, and Workers logs and traces. This project has not been deployed.
+`wrangler.jsonc` targets Workers static assets with SPA fallback (`assets.not_found_handling` = `single-page-application`), a thin Worker entry, compatibility date 2026-10-18, and Workers logs and traces. This project is deployed to Cloudflare Workers. The production URL is not recorded in this repository.
 
 ```bash
 npm run build

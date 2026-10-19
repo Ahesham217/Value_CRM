@@ -13,7 +13,7 @@ Historical decision dates are **unknown** where the repository shows the impleme
 - Status: Implemented
 - Decision: Host the internal application on Cloudflare Workers static assets, with Supabase for the database, authentication, and row-level security.
 - Reason: Staff need one shared system for clients, vendors, products, and proforma invoices without running an ERP. The first version was built as a React and Vite frontend against the Value CRM Supabase project.
-- Consequences or limitations: The service-role key stays off the client and out of Wrangler. The project had not been deployed when this entry was documented. Verifications and Value-Website are separate Supabase projects and are not part of this application.
+- Consequences or limitations: The service-role key stays off the client and out of Wrangler. The project had not been deployed when this entry was first documented; it has since been deployed to Cloudflare Workers. The production URL is not recorded in this repository. Verifications and Value-Website are separate Supabase projects and are not part of this application.
 - References: `README.md`, `wrangler.jsonc`, `worker/index.ts`, commit `cb524eb` (2026-10-18, "Add the first version of Value CRM.")
 
 ## DEC-002
@@ -114,7 +114,7 @@ Historical decision dates are **unknown** where the repository shows the impleme
 - Decision: Generate PI PDFs on demand from the immutable issued snapshot. Do not upload generated PDFs to Supabase Storage.
 - Reason: The snapshot already contains the issued document. Storing a second PDF file made issuance depend on a browser upload, left versions looking incomplete when that upload failed, and required generate permission for a later download.
 - Consequences or limitations:
-  - **Generate & Download** still calls `generate_pi`. Numbering, validation, calculation, permissions, and the snapshot are unchanged. The browser renders the returned snapshot and downloads it directly.
+  - **Generate PI** (originally labelled Generate & Download; see [DEC-012](#dec-012)) still calls `generate_pi`. Numbering, validation, calculation, permissions, and the snapshot are unchanged. The browser renders the returned snapshot and downloads it directly.
   - Downloads of an existing version use that version's snapshot. They do not allocate a number, create a revision, or change the snapshot, dates, or attribution. A person who can read the version can download it without permission to issue a new PI.
   - If rendering fails after the database has issued the PI, the number and version remain. The user is told the PI was issued and can use **Download** on that version. That retry does not issue another document.
   - Rendering dispatches on `layout_version`. `egypt-v1` and `uae-v1` use the current v1 renderer. A new layout must be a new version. An unknown version is an error and is not drawn with another layout.
@@ -124,3 +124,21 @@ Historical decision dates are **unknown** where the repository shows the impleme
   - PDF retry and confirmation functions, and the insert and delete policies on `pi-pdfs`, are removed. The bucket and any existing objects stay until a separate cleanup.
   - Regeneration depends on the saved snapshot. It is not a backup of the database.
 - References: `supabase/migrations/20261019080451_on_demand_pi_pdfs.sql`, `src/lib/documents.ts`, `src/lib/pdf.ts`, `src/pages/PiDetail.tsx`, `src/pages/PiEditor.tsx`, [docs/cleanup-pi-pdfs.md](cleanup-pi-pdfs.md)
+
+## DEC-012
+
+- Decision date: 2026-10-19
+- Documented: 2026-10-19
+- Status: Implemented
+- Decision: Show the everyday controls first, and reveal optional controls in labelled sections. A saved or enabled optional value stays visible as a summary when its section is closed.
+- Reason: The previous screens showed every filter, item field, adjustment, commercial term, and settings form at once. Preparing a normal PI took too much scrolling and presented too many choices at the same time.
+- Consequences or limitations:
+  - PIs stay the home page. The sidebar is PIs, Clients, Vendors, Products, and Settings for administrators. There is no dashboard.
+  - The PI list keeps search, status, and New PI visible. Office, currency, salesperson, and date range are under Filters, and applied filters stay visible as removable chips.
+  - The PI editor is one page: header and client, items, then totals and commercial terms. Office and currency, client, dates, lead salesperson, payment terms, and delivery terms stay visible. Separate shipping details, additional salespeople, discounts and charges, price basis, warranty, and notes open on request.
+  - Closing a section does not clear its value. Dates loaded for a draft are not reset by opening a section. Editing PI-specific client text does not change the client record.
+  - Item rows are a compact table. Description, quantity, unit, and price are edited on the row. Vendor still comes only from the catalogue product. Move up and Move down are in the row's Reorder menu; drag and drop is unchanged.
+  - The primary issue control is labelled **Generate PI**. It still calls `generate_pi` and downloads the PDF rendered in the browser from the returned snapshot. Numbering, revisions, snapshots, calculation, and permissions are unchanged.
+  - Issued PI actions other than the latest Download are grouped under More actions. Every issued version remains downloadable from Version history.
+  - Settings shows one area at a time: company and bank presets, default terms, or users. Only the selected company preset's form is shown. User permissions are unchanged and are still enforced on the server.
+- References: `src/components/Shell.tsx`, `src/components/ui.tsx`, `src/pages/PiList.tsx`, `src/pages/PiEditor.tsx`, `src/pages/PiDetail.tsx`, `src/pages/Settings.tsx`, `README.md`

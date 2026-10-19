@@ -38,7 +38,7 @@ export function ResetPasswordPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center px-4">
-      <form onSubmit={onSubmit} className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+      <form onSubmit={onSubmit} className="w-full max-w-md rounded-md border border-slate-200 bg-white p-5">
         <h1 className="text-2xl font-semibold text-navy-950">Choose a new password</h1>
         <p className="mt-1 mb-4 text-sm text-slate-600">Use the link from your reset email. It opens this page with a recovery session.</p>
         {error ? <div className="mb-3"><Banner tone="error">{error}</Banner></div> : null}
