@@ -142,3 +142,13 @@ Historical decision dates are **unknown** where the repository shows the impleme
   - Issued PI actions other than the latest Download are grouped under More actions. Every issued version remains downloadable from Version history.
   - Settings shows one area at a time: company and bank presets, default terms, or users. Only the selected company preset's form is shown. User permissions are unchanged and are still enforced on the server.
 - References: `src/components/Shell.tsx`, `src/components/ui.tsx`, `src/pages/PiList.tsx`, `src/pages/PiEditor.tsx`, `src/pages/PiDetail.tsx`, `src/pages/Settings.tsx`, `README.md`
+
+
+## DEC-013
+
+- Decision date: 2026-10-19
+- Status: Implemented
+- Decision: Enable Cloudflare branch previews with a top-level empty `previews` block, and build with Vite before running `wrangler preview`.
+- Reason: Review an unmerged UI branch at a preview URL while production remains on main.
+- Consequences or limitations: Production continues to use `wrangler deploy`. The generated configuration must retain the preview block and built assets directory. A preview configured with the production Supabase URL shares live data; it is not a separate test database. Preview invitation/reset redirects require allowlisting.
+- References: `wrangler.jsonc`, README branch previews, PR #6.
