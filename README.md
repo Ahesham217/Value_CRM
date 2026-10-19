@@ -51,6 +51,9 @@ supabase db query --linked -f supabase/migrations/20261018120100_functions.sql
 supabase db query --linked -f supabase/migrations/20261018120200_security.sql
 supabase db query --linked -f supabase/migrations/20261018120300_egypt_logo.sql
 supabase db query --linked -f supabase/migrations/20261018120400_indexes.sql
+supabase db query --linked -f supabase/migrations/20261018130500_clear_uae_fixed_bank_charge_notes.sql
+supabase db query --linked -f supabase/migrations/20261018133347_pi_default_cairo_dates.sql
+supabase db query --linked -f supabase/migrations/20261018143000_product_model_identity.sql
 ```
 
 The first migration installs `public.rls_auto_enable()` and the `ensure_rls` event trigger. That is the same automatic RLS trigger used on the other Value Technologies projects: every new table in `public` gets row level security. The trigger does not create policies. This repo creates those policies explicitly and also enables RLS in the table statements.
@@ -122,6 +125,12 @@ Egypt and UAE are the only PDF layouts. UAE uses the selected USD or EUR preset.
 Default commercial terms are copied onto each new draft and stay editable on that PI.
 
 ## Proforma invoices
+
+Each item on a draft is a catalogue product. Add it under the last line, search by model, and select it, or create a new catalogue product without leaving the PI if you manage products. Model names are unique across the catalogue, including archived products; comparison ignores capitalisation and surrounding spaces, and the saved spelling is what the PI shows. The line copies the product's vendor, description, unit, and the default selling price for the PI currency. A missing price stays blank and an explicit zero stays zero. There is no currency conversion. Description, unit, quantity, and selling price can then be edited for that PI only. Changing the model selects or creates a different product; it does not rename the previous one. Vendor cannot be changed independently of the product. Brand is not required and is not added to the description.
+
+Drag the row handle, or use Move up and Move down, to set the order. That order is kept on the draft and used by preview, the issued PDF, duplicates, and later revisions. Older issued versions keep the order they were generated with.
+
+A draft line from before this rule that has no matching product stays on the draft and is marked until someone selects or creates a product. It cannot be saved again or generated until then. The migration does not fill those lines in, and it does not change issued snapshots or stored PDFs.
 
 Drafts are editable. **Generate & Download** allocates the permanent number, stores version 0 as an immutable snapshot, and uploads the PDF. The number looks like `EG-2026-00001` or `AE-2026-00001`. Egypt has one sequence. UAE shares one sequence across USD and EUR. The year comes from the PI date and the sequence resets each year. Allocation is a locked counter inside the database transaction. A failed PDF upload does not allocate another number.
 

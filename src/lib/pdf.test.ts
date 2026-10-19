@@ -375,6 +375,8 @@ describe("PI pdf", () => {
     expect(text).toContain("M-28");
     expect(text).toContain("Page 1 of");
     expect(text).toContain(`Page ${pages} of ${pages}`);
+    expect(text.indexOf("M-1")).toBeLessThan(text.indexOf("M-2"));
+    expect(text.indexOf("M-2")).toBeLessThan(text.indexOf("M-28"));
     expect(text.match(/Description/g)?.length).toBeGreaterThan(1);
     expect(text).toContain("EG590010007200000100022610548");
   });
