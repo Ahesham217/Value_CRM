@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:preview": "npm run build && node scripts/prepare-preview.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "6.3.1",
