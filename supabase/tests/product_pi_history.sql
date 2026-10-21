@@ -185,6 +185,7 @@ begin
     'tax_excludes_bank_charge', false,
     'price_basis', 'Site Delivery',
     'payment_terms', '100% in advance',
+    'payment_schedule', 'null'::jsonb,
     'delivery_terms', 'Available in stock',
     'warranty', '',
     'additional_notes', '',

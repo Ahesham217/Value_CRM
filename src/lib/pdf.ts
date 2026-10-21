@@ -125,7 +125,7 @@ function parties(snapshot: PiSnapshot, layout: IssuedLayoutVersion): Content {
 
   return {
     columns: [
-      partyBlock(layout === "uae-v1" ? "To" : "Client", clientLines),
+      partyBlock(layout.startsWith("uae-") ? "To" : "Client", clientLines),
       partyBlock("Bill to", [snapshot.bill_to]),
       partyBlock("Ship to", [snapshot.ship_to]),
     ],
@@ -307,7 +307,7 @@ function bank(snapshot: PiSnapshot): Content {
 
 function declaration(snapshot: PiSnapshot, layout: IssuedLayoutVersion): Content {
   const base =
-    layout === "uae-v1"
+    layout.startsWith("uae-")
       ? "I declare that the above information is true and correct to the best of my knowledge."
       : "I declare that the information mentioned above is true and correct to the best of my knowledge.";
   const lines = [base];
@@ -327,7 +327,7 @@ function declaration(snapshot: PiSnapshot, layout: IssuedLayoutVersion): Content
   };
 }
 
-export const ISSUED_LAYOUT_VERSIONS = ["egypt-v1", "uae-v1"] as const;
+export const ISSUED_LAYOUT_VERSIONS = ["egypt-v1", "uae-v1", "egypt-v2", "uae-v2"] as const;
 
 export type IssuedLayoutVersion = (typeof ISSUED_LAYOUT_VERSIONS)[number];
 
@@ -349,6 +349,12 @@ function missingSnapshotData(snapshot: PiSnapshot): string[] {
     missing.push("saved totals");
   }
   if (!snapshot.terms) missing.push("terms");
+  if (snapshot.layout_version === "egypt-v2" || snapshot.layout_version === "uae-v2") {
+    const payment = snapshot.payment;
+    if (!payment || payment.schema_version !== 1 || typeof payment.customer_text !== "string" || !Array.isArray(payment.rows)) {
+      missing.push("payment schedule");
+    }
+  }
   return missing;
 }
 
@@ -412,9 +418,139 @@ function buildIssuedDocumentV1(snapshot: PiSnapshot, layout: IssuedLayoutVersion
   };
 }
 
+function sentenceCase(value: string): string {
+  const text = value.trim();
+  if (!text) return "";
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function paymentAmountLabel(row: NonNullable<PiSnapshot["payment"]>["rows"][number], currency: string): string {
+  const amount = formatMoney(row.amount, currency);
+  if (row.amount_basis.type === "percent" && row.amount_basis.percent) return `${amount} (${row.amount_basis.percent}%)`;
+  if (row.amount_basis.type === "fixed") return amount;
+  if (row.amount_basis.type === "remainder") return `${amount} remaining`;
+  return amount;
+}
+
+function structuredPayment(snapshot: PiSnapshot): Content {
+  const payment = snapshot.payment;
+  if (!payment) return { text: "" };
+  if (payment.no_payment_due || payment.presentation !== "table") {
+    return {
+      text: [{ text: "Payment terms: ", bold: true }, { text: payment.customer_text }],
+      fontSize: 9,
+      margin: [0, 0, 0, 3],
+    };
+  }
+  const body: Content[][] = [[
+    { text: "Payment", style: "th" },
+    { text: "Amount", style: "th", alignment: "right" },
+    { text: "Due", style: "th" },
+  ]];
+  for (const row of payment.rows) {
+    const label = row.label || `Payment ${row.position}`;
+    if (row.instalments && row.instalments.length > 0) {
+      for (const instalment of row.instalments) {
+        body.push([
+          { text: `${label} (${instalment.sequence} of ${instalment.count})`, fontSize: 8 },
+          { text: formatMoney(instalment.amount, snapshot.currency), alignment: "right", fontSize: 8 },
+          { text: sentenceCase(instalment.due_formula), fontSize: 8 },
+        ]);
+      }
+    } else {
+      body.push([
+        { text: label, fontSize: 8 },
+        { text: paymentAmountLabel(row, snapshot.currency), alignment: "right", fontSize: 8 },
+        { text: sentenceCase(row.due_formula), fontSize: 8 },
+      ]);
+    }
+  }
+  return {
+    stack: [
+      sectionTitle("Payment schedule"),
+      {
+        table: { headerRows: 1, widths: [168, 110, "*"], body, dontBreakRows: true },
+        layout: {
+          fillColor: (rowIndex: number) => (rowIndex === 0 ? "#e8eef4" : null),
+          hLineColor: () => LINE,
+          vLineColor: () => LINE,
+          hLineWidth: () => 0.4,
+          vLineWidth: () => 0.4,
+          paddingLeft: () => 4,
+          paddingRight: () => 4,
+          paddingTop: () => 3,
+          paddingBottom: () => 3,
+        },
+      },
+    ],
+  };
+}
+
+function termsV2(snapshot: PiSnapshot): Content {
+  const entries: Content[] = [];
+  if (paragraph(snapshot.terms.price_basis)) {
+    entries.push({ text: [{ text: "Price basis: ", bold: true }, { text: snapshot.terms.price_basis }], fontSize: 9, margin: [0, 0, 0, 3] });
+  }
+  entries.push(structuredPayment(snapshot));
+  for (const [label, value] of [
+    ["Delivery", snapshot.terms.delivery_terms],
+    ["Warranty", snapshot.terms.warranty],
+    ["Notes", snapshot.terms.additional_notes],
+  ] as const) {
+    if (!paragraph(value)) continue;
+    entries.push({ text: [{ text: `${label}: `, bold: true }, { text: value }], fontSize: 9, margin: [0, 0, 0, 3] });
+  }
+  if (entries.length === 0 && !paragraph(snapshot.bank.notes)) return { text: "" };
+  return { stack: [sectionTitle("Commercial terms"), ...entries] };
+}
+
+function buildIssuedDocumentV2(snapshot: PiSnapshot, layout: IssuedLayoutVersion): TDocumentDefinitions {
+  return {
+    pageSize: "A4",
+    pageMargins: [32, 28, 32, 42],
+    defaultStyle: { font: "Roboto", fontSize: 9, color: "#1c2833" },
+    info: {
+      title: `Proforma invoice ${snapshot.display_number}`,
+      author: snapshot.company.name,
+    },
+    footer: (currentPage, pageCount) => ({
+      columns: [
+        { text: snapshot.company.name, color: MUTED, fontSize: 8, margin: [32, 8, 0, 0] },
+        {
+          text: `Page ${currentPage} of ${pageCount}`,
+          alignment: "right",
+          color: MUTED,
+          fontSize: 8,
+          margin: [0, 8, 32, 0],
+        },
+      ],
+    }),
+    content: [
+      header(snapshot),
+      { canvas: [{ type: "line", x1: 0, y1: 0, x2: 531, y2: 0, lineWidth: 1, lineColor: RULE }] },
+      parties(snapshot, layout),
+      attribution(snapshot),
+      itemsTable(snapshot),
+      totals(snapshot),
+      termsV2(snapshot),
+      bank(snapshot),
+      declaration(snapshot, layout),
+    ],
+    styles: {
+      company: { fontSize: 11, bold: true, color: NAVY },
+      title: { fontSize: 14, bold: true, color: NAVY, alignment: "right" },
+      number: { fontSize: 11, bold: true, alignment: "right", color: NAVY },
+      section: { fontSize: 10, bold: true, color: NAVY },
+      th: { bold: true, fontSize: 8, color: NAVY },
+    },
+  };
+}
+
 const issuedLayouts: Record<IssuedLayoutVersion, (snapshot: PiSnapshot) => TDocumentDefinitions> = {
   "egypt-v1": (snapshot) => buildIssuedDocumentV1(snapshot, "egypt-v1"),
   "uae-v1": (snapshot) => buildIssuedDocumentV1(snapshot, "uae-v1"),
+  "egypt-v2": (snapshot) => buildIssuedDocumentV2(snapshot, "egypt-v2"),
+  "uae-v2": (snapshot) => buildIssuedDocumentV2(snapshot, "uae-v2"),
 };
 
 export function buildPiDefinition(snapshot: PiSnapshot): TDocumentDefinitions {

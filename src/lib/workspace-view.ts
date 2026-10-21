@@ -180,6 +180,8 @@ export type EditorSnapshot = {
   taxExcludesBank: boolean;
   priceBasis: string;
   paymentTerms: string;
+  paymentMode: "legacy" | "structured";
+  paymentSchedule: unknown;
   deliveryTerms: string;
   warranty: string;
   notes: string;

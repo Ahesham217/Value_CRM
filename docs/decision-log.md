@@ -202,3 +202,23 @@ Use `npm run build:preview` for preview builds. The script follows Vite's deploy
   - `private.product_pi_history` is security definer, with an empty search path, and calls the existing active-member and `can_read_pi` checks. Rows, counts, and client, currency, and status options use that same authorized set. The public wrapper is security invoker. Anonymous users cannot execute it. The query does not read `product_costs`.
   - Ordering is newest PI date first, then PI number, then latest issued before an open revision draft, then older revisions, then initial drafts, then line position. The database applies the filters and the page size.
 - References: `supabase/migrations/20261019150000_product_pi_history.sql`, `src/components/ProductPiHistory.tsx`, `src/pages/ProductDetail.tsx`, `README.md`
+
+## DEC-017
+
+- Decision date: 2026-10-21
+- Documented: 2026-10-21
+- Status: Implemented in the repository. The migration has not been applied to Value CRM.
+- Decision: Store a PI payment agreement as structured data and generate the customer wording from that data. Keep legacy payment paragraphs only for drafts and issued snapshots that do not have a schedule.
+- Reason: Payment agreements vary, and a free-text paragraph cannot be used later for receipts or reminders without parsing prose.
+- Consequences or limitations:
+  - A schedule row is a percentage of the final PI grand total, a fixed amount in the PI currency, or the single remaining balance. Percentages are not percentages of a line or of the unpaid balance. EGP, USD, and EUR are not converted.
+  - Money uses the existing half-up, two-decimal rounding. Equal instalments put any remainder on the final instalment. Percentage rows that add up to exactly 100% put a one-cent rounding difference on the final percentage row. A shortfall that is not that rounding residue stays unallocated and blocks issue.
+  - Due rules are a calendar date, a milestone, a number of days or calendar months after a milestone, or before shipment with an optional deadline. Milestone choices are order confirmation, shipment, delivery, commissioning, or a custom milestone with its own identifier and label. Event dates are not inferred from creating, issuing, or downloading a PI. An unknown event stays unresolved and is not overdue. “Before shipment” is not given a deadline from a later shipment date.
+  - Instalments split one row’s amount. Yearly instalments divide that amount across years. They do not create subscription renewals.
+  - The database validates and calculates the schedule inside the existing save and issue transaction. Optimistic concurrency is unchanged. Browser amounts and browser wording are ignored.
+  - New issued snapshots use `egypt-v2` or `uae-v2` and store the agreement, canonical amounts, instalment lines, known dates, due formulas, and customer text. `egypt-v1` and `uae-v1` snapshots are not rewritten and still render their saved paragraph. Unknown layout versions still fail.
+  - A legacy draft can still be issued from its paragraph. Opening or saving it does not erase that paragraph. Replacement with a schedule is explicit. New drafts start with an empty schedule and do not copy `default_terms.payment_terms`.
+  - A revision copies the agreement, keeps fixed dates, and recalculates percentage and remainder amounts when the total changes. A duplicate copies rules, assigns new identifiers, and clears fixed dates and before-shipment deadlines.
+  - This does not collect payments, send reminders, renew subscriptions, or open an order module. A future collection plan must be activated from one specific accepted issued version. Generating, downloading, or revising a PI must not create another plan or move the active one. A revision must not erase receipts.
+  - `20261021180000_payment_schedules.sql` is additive but changes `create_pi_draft`. Deploy it with the frontend. Do not apply it first.
+- References: `supabase/migrations/20261021180000_payment_schedules.sql`, `supabase/tests/payment_schedules.sql`, `src/lib/payment-schedule.ts`, `src/components/PaymentScheduleSection.tsx`, `src/lib/pdf.ts`, `README.md`

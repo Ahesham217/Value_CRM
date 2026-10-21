@@ -4,7 +4,7 @@ Internal application for Value Technologies. Staff save clients, vendors, and pr
 
 The hosted database is the Supabase project **Value CRM** (`idhqrvrpzlkpyyqlkozl`, eu-west-1) in the Value Technologies organization. Verifications and Value-Website are separate applications and were not modified.
 
-PIs are the home page. A compact sidebar also opens Clients, Vendors, and Products. Settings is shown only to administrators, and is split into company and bank presets, default terms, and users. A draft is one document: office and currency, client, dates, lead salesperson, items, payment and delivery terms, and totals. Shipping and reference, additional salespeople, discounts and charges, and the other commercial terms open from quiet actions. A saved value stays visible as a summary when its section is closed. Saving a draft is explicit. On the PI list, search, status, and New PI stay visible. Office, currency, salesperson, and date range are under Filters.
+PIs are the home page. A compact sidebar also opens Clients, Vendors, and Products. Settings is shown only to administrators, and is split into company and bank presets, default terms, and users. A draft is one document: office and currency, client, dates, lead salesperson, items, a payment schedule, delivery terms, and totals. Shipping and reference, additional salespeople, discounts and charges, and the other commercial terms open from quiet actions. A saved value stays visible as a summary when its section is closed. Saving a draft is explicit. On the PI list, search, status, and New PI stay visible. Office, currency, salesperson, and date range are under Filters.
 
 ## Project decisions
 
@@ -62,6 +62,7 @@ supabase db query --linked -f supabase/migrations/20261018133347_pi_default_cair
 supabase db query --linked -f supabase/migrations/20261018143000_product_model_identity.sql
 supabase db query --linked -f supabase/migrations/20261019080451_on_demand_pi_pdfs.sql
 supabase db query --linked -f supabase/migrations/20261019150000_product_pi_history.sql
+supabase db query --linked -f supabase/migrations/20261021180000_payment_schedules.sql
 ```
 
 The first migration installs `public.rls_auto_enable()` and the `ensure_rls` event trigger. That is the same automatic RLS trigger used on the other Value Technologies projects: every new table in `public` gets row level security. The trigger does not create policies. This repo creates those policies explicitly and also enables RLS in the table statements.
@@ -69,6 +70,8 @@ The first migration installs `public.rls_auto_enable()` and the `ensure_rls` eve
 `20261019080451_on_demand_pi_pdfs.sql` is included in the list above and has been applied to Value CRM. It does not rewrite issued snapshots or existing PDF metadata.
 
 `20261019150000_product_pi_history.sql` is included in the list above and has been applied to Value CRM. It stores line and product identifiers on newly issued snapshots and adds the product history query. It does not rewrite older snapshots.
+
+`20261021180000_payment_schedules.sql` is in the repository and has **not** been applied to Value CRM. Apply it in the same deployment as the frontend that edits payment schedules. It adds a nullable `payment_schedule` column and replaces the draft, duplicate, and snapshot functions. Existing rows and issued snapshots are not rewritten. Applying it while the previous frontend is still creating PIs would make new drafts structured, which that frontend cannot issue. Do not run it ahead of that frontend deploy.
 
 `20261018120300_egypt_logo.sql` stores the logo extracted from `reference-templates/Egypt Template.xlsx`. The UAE workbooks do not contain a logo. If Settings shows no Egypt logo, run that file once in the SQL editor.
 
@@ -134,7 +137,7 @@ Account numbers, IBANs, and SWIFT codes are stored as text. The UAE legal addres
 
 Egypt and UAE are the only PDF layouts. UAE uses the selected USD or EUR preset. A PI cannot be issued until the preset has a company name, address, bank name, account name, account number, IBAN, and SWIFT. Settings shows **Ready to issue** or **Needs configuration**.
 
-Default commercial terms are copied onto each new draft and stay editable on that PI.
+Default commercial terms, except the old payment paragraph, are copied onto each new draft and stay editable on that PI. The stored payment paragraph is kept for legacy drafts only. It is not copied onto a new PI and it does not configure the payment schedule. Settings shows it as a legacy paragraph, not as a control for new agreements.
 
 ## Proforma invoices
 
@@ -166,7 +169,15 @@ Totals are calculated in the database with `numeric` rounding, and the editor pr
 
 A blank price is unknown, not zero. There is no currency conversion and no automatic tax determination. Unused adjustments are omitted from the PDF. The VAT-exclusion sentence is omitted when tax is included.
 
-The customer PDF contains the company, client, bill-to, ship-to, the lead salesperson’s name and phone labelled **Contact person**, items, totals, terms, and bank details. The preparer’s name, additional salespeople, purchase prices, and vendors stay internal. Prepared by is still recorded and visible inside the app. This customer-facing attribution rule also applies when re-downloading older issued snapshots; their saved data is not changed. Draft preview and issued download use the same pdfmake renderer. The renderer dispatches on the snapshot's `layout_version` (`egypt-v1` or `uae-v1`). An unsupported layout version is reported and is not drawn with a different layout. The issued PDF is rendered only from the snapshot: client and contact, line order, quantities, units, prices, saved totals, terms, company and bank details, the company contact, dates, and the saved logo. The snapshot retains the preparer for internal records, but that field is not printed. Current client, product, user, logo, or bank records are not read to fill an old document. If a snapshot is missing data the renderer needs, the download stops with that gap instead of substituting current records. Replacing the logo or a catalogue row does not change an issued snapshot.
+The customer PDF contains the company, client, bill-to, ship-to, the lead salesperson’s name and phone labelled **Contact person**, items, totals, terms, and bank details. The preparer’s name, additional salespeople, purchase prices, and vendors stay internal. Prepared by is still recorded and visible inside the app. This customer-facing attribution rule also applies when re-downloading older issued snapshots; their saved data is not changed. Draft preview and issued download use the same pdfmake renderer. The renderer dispatches on the snapshot's `layout_version` (`egypt-v1`, `uae-v1`, `egypt-v2`, or `uae-v2`). An unsupported layout version is reported and is not drawn with a different layout.
+
+New drafts use a structured payment schedule. Percentages are percentages of the PI grand total after discounts, tax, and charges. A fixed amount stays in the PI currency. At most one row is the remaining balance. A row can be split into equal monthly or yearly instalments of that row's amount; the final instalment absorbs rounding so the group still matches the row. Dates are calendar dates, or rules such as “upon delivery” or “one calendar month after delivery”. A before-shipment row can have its own payment deadline. If that deadline is blank, the draft says the deadline is still to be set, and the PDF says “before shipment” without inventing a date from a shipment. The customer wording is generated from the schedule. Staff do not edit that paragraph on its own.
+
+An incomplete schedule can be saved. It cannot be issued until the database can reconcile it to the grand total. The browser totals and wording are not trusted: `generate_pi` calculates the amounts and the customer text again. A zero-total PI can be issued only with an explicit “No payment due” schedule. EGP, USD, and EUR are not converted.
+
+Issued snapshots from this version store schema version 1, the agreement, the canonical amounts, instalment lines, known dates, unresolved due formulas, and the customer text. Those snapshots use `egypt-v2` or `uae-v2`. A long agreement is drawn as a payment table. Older `egypt-v1` and `uae-v1` snapshots keep their saved payment paragraph. A legacy draft can still be issued that way until someone replaces the paragraph with a schedule. Duplicating a structured PI copies the amounts and event rules, assigns new row identifiers, and clears fixed dates and before-shipment deadlines so they are reviewed. A revision copies the agreement, keeps those dates, and recalculates percentage and remainder amounts when the total changes. The original issued snapshot is not changed.
+
+Generating or downloading a PI does not collect money, send a reminder, or open a collection plan. A future collection plan has to be activated from one accepted issued version. A later revision must not retarget that plan or erase receipts. The issued PDF is rendered only from the snapshot: client and contact, line order, quantities, units, prices, saved totals, terms, company and bank details, the company contact, dates, and the saved logo. The snapshot retains the preparer for internal records, but that field is not printed. Current client, product, user, logo, or bank records are not read to fill an old document. If a snapshot is missing data the renderer needs, the download stops with that gap instead of substituting current records. Replacing the logo or a catalogue row does not change an issued snapshot.
 
 `pi_versions.pdf_status` and `pdf_path` remain as legacy metadata. New versions are stored as `issued` with no file path. Older rows may still say `pending` or `ready`; the screen does not treat that as a failed download. Previously stored files in the private `pi-pdfs` bucket are left in place. Removing them is a separate step, described in [docs/cleanup-pi-pdfs.md](docs/cleanup-pi-pdfs.md), and it has not been run.
 
@@ -260,4 +271,4 @@ Keep at least one recent database dump. A copy of `pi-pdfs` only preserves files
 
 ## Limits of this version
 
-No pipeline, inventory, accounting, payments, email delivery of PIs, customer portal, currency conversion, or automatic tax rules. Purchase-price permission is a separate table, not a column on `products`. Historical salesperson assignment is the current assignment list plus the people who created the draft or generated a version.
+No pipeline, inventory, accounting, payment collection, receipt allocation, reminders, subscription renewal, email delivery of PIs, customer portal, currency conversion, or automatic tax rules. The payment schedule defines what was agreed. It does not record what was received. Purchase-price permission is a separate table, not a column on `products`. Historical salesperson assignment is the current assignment list plus the people who created the draft or generated a version.

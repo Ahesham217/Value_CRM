@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
 import { ClientCombobox } from "../components/ClientCombobox";
+import { PaymentScheduleSection } from "../components/PaymentScheduleSection";
 import { PiItemSection } from "../components/PiItemSection";
 import { Banner, Button, Disclosure, Field, Select, TextArea, buttonClass, controlClass } from "../components/ui";
 import { toCatalogueProduct } from "../lib/catalogue";
@@ -9,6 +10,7 @@ import { generateAndDownload, isIssuedDownloadError, previewDraftPdf, saveDraft 
 import { errorText, isConflict } from "../lib/errors";
 import { formatMoney } from "../lib/format";
 import { calculateDocument } from "../lib/money";
+import { emptyPaymentSchedule, issueList, previewPaymentSchedule, readPaymentSchedule, type PaymentSchedule } from "../lib/payment-schedule";
 import { numericInputValue } from "../lib/numeric-input";
 import { can } from "../lib/permissions";
 import { editorLineFromStored, generationBlock, isBlankPlaceholder, isResolvedLine, linesForDraft, type EditorLine } from "../lib/pi-lines";
@@ -103,6 +105,9 @@ export function PiEditorPage() {
   const [taxExcludesInstallation, setTaxExcludesInstallation] = useState(false);
   const [taxExcludesBank, setTaxExcludesBank] = useState(false);
   const [priceBasis, setPriceBasis] = useState("");
+  const [paymentMode, setPaymentMode] = useState<"legacy" | "structured">("structured");
+  const [paymentSchedule, setPaymentSchedule] = useState<PaymentSchedule>(emptyPaymentSchedule());
+  const [loadedLegacy, setLoadedLegacy] = useState(false);
   const [paymentTerms, setPaymentTerms] = useState("");
   const [deliveryTerms, setDeliveryTerms] = useState("");
   const [warranty, setWarranty] = useState("");
@@ -150,6 +155,17 @@ export function PiEditorPage() {
     setTaxExcludesBank(pi.tax_excludes_bank_charge);
     setPriceBasis(pi.price_basis);
     setPaymentTerms(pi.payment_terms);
+    if (pi.payment_schedule == null) {
+      setPaymentMode("legacy");
+      setLoadedLegacy(true);
+      setPaymentSchedule(emptyPaymentSchedule());
+    } else {
+      const schedule = readPaymentSchedule(pi.payment_schedule);
+      if (!schedule) throw new Error("The saved payment schedule could not be read.");
+      setPaymentMode("structured");
+      setLoadedLegacy(false);
+      setPaymentSchedule(schedule);
+    }
     setDeliveryTerms(pi.delivery_terms);
     setWarranty(pi.warranty);
     setNotes(pi.additional_notes);
@@ -224,6 +240,18 @@ export function PiEditorPage() {
     }
   }, [bankCharge, bankOn, discountType, discountValue, installation, installationOn, lines, shipping, shippingOn, taxEnabled, taxExcludesBank, taxExcludesInstallation, taxExcludesShipping, taxPercent]);
 
+  const paymentGrandTotal = totals.value && totals.value.unpricedCount === 0 ? totals.value.grandTotal : null;
+  const paymentPreview = useMemo(
+    () => previewPaymentSchedule(paymentSchedule, currency, paymentGrandTotal),
+    [currency, paymentGrandTotal, paymentSchedule],
+  );
+
+  function paymentIssue(): string | null {
+    if (paymentMode === "legacy") return null;
+    if (paymentPreview.ready) return null;
+    return issueList(paymentPreview.issues) || "Complete the payment schedule before continuing.";
+  }
+
   const fingerprint = useMemo(() => editorFingerprint({
     presetCode,
     piDate,
@@ -259,12 +287,14 @@ export function PiEditorPage() {
     taxExcludesBank,
     priceBasis,
     paymentTerms,
+    paymentMode,
+    paymentSchedule,
     deliveryTerms,
     warranty,
     notes,
   }), [
     bankCharge, bankOn, billTo, clientId, contactId, deliveryTerms, discountType, discountValue, expiryDate,
-    installation, installationOn, leadId, lines, notes, paymentTerms, piDate, presetCode, priceBasis, reference,
+    installation, installationOn, leadId, lines, notes, paymentMode, paymentSchedule, paymentTerms, piDate, presetCode, priceBasis, reference,
     selectedSales, shipSame, shipTo, shipping, shippingOn, taxEnabled, taxExcludesBank, taxExcludesInstallation,
     taxExcludesShipping, taxPercent, warranty,
   ]);
@@ -299,7 +329,8 @@ export function PiEditorPage() {
       tax_excludes_installation: taxExcludesInstallation,
       tax_excludes_bank_charge: taxExcludesBank,
       price_basis: priceBasis,
-      payment_terms: paymentTerms,
+      payment_terms: paymentMode === "legacy" ? paymentTerms : "",
+      payment_schedule: paymentMode === "legacy" ? null : paymentSchedule,
       delivery_terms: deliveryTerms,
       warranty,
       additional_notes: notes,
@@ -325,7 +356,9 @@ export function PiEditorPage() {
     const contact = contacts.find((item) => item.id === contactId);
     const calculated = totals.value;
     return {
-      layout_version: preset.layout === "uae" ? "uae-v1" : "egypt-v1",
+      layout_version: paymentMode === "structured"
+        ? (preset.layout === "uae" ? "uae-v2" : "egypt-v2")
+        : (preset.layout === "uae" ? "uae-v1" : "egypt-v1"),
       preset_code: preset.code,
       office: preset.office,
       currency: preset.currency,
@@ -404,7 +437,14 @@ export function PiEditorPage() {
         tax_amount: calculated.taxAmount,
         grand_total: calculated.grandTotal,
       },
-      terms: { price_basis: priceBasis, payment_terms: paymentTerms, delivery_terms: deliveryTerms, warranty, additional_notes: notes },
+      terms: {
+        price_basis: priceBasis,
+        payment_terms: paymentMode === "structured" ? (paymentPreview.customerText ?? "") : paymentTerms,
+        delivery_terms: deliveryTerms,
+        warranty,
+        additional_notes: notes,
+      },
+      payment: paymentMode === "structured" ? paymentPreview.canonical : null,
     };
   }
 
@@ -419,6 +459,7 @@ export function PiEditorPage() {
     try {
       const result = await saveDraft(id, draftVersion, body);
       setDraftVersion(result.draft_version);
+      if (paymentMode === "structured") setLoadedLegacy(false);
       setBaseline(fingerprint);
       setSavedNotice(true);
       setMessage(null);
@@ -434,6 +475,12 @@ export function PiEditorPage() {
 
   async function onPreview() {
     if (acting.current) return;
+    const blockedPayment = paymentIssue();
+    if (blockedPayment) {
+      setMessage(null);
+      setError(blockedPayment);
+      return;
+    }
     const body = preparedPayload();
     if (!body) return;
     acting.current = true;
@@ -458,6 +505,12 @@ export function PiEditorPage() {
       if (blocked) {
         setMessage(null);
         setError(blocked);
+        return;
+      }
+      const blockedPayment = paymentIssue();
+      if (blockedPayment) {
+        setMessage(null);
+        setError(blockedPayment);
         return;
       }
       const body = preparedPayload();
@@ -798,10 +851,28 @@ export function PiEditorPage() {
         <div className="mt-8 grid items-start gap-8 border-t border-line pt-6 lg:grid-cols-[minmax(0,1fr)_22.5rem]">
         <section className="order-2 lg:order-1">
           <h2 className="text-[15px] font-semibold text-ink">Commercial terms</h2>
+          <div className="mt-4">
+            <PaymentScheduleSection
+              mode={paymentMode}
+              legacyText={paymentTerms}
+              schedule={paymentSchedule}
+              currency={currency}
+              grandTotal={paymentGrandTotal}
+              canEdit={canEdit}
+              showLegacyCancel={loadedLegacy}
+              onLegacyText={setPaymentTerms}
+              onReplaceLegacy={() => {
+                setPaymentMode("structured");
+                setPaymentSchedule(emptyPaymentSchedule());
+              }}
+              onCancelReplacement={() => {
+                setPaymentMode("legacy");
+                setPaymentSchedule(emptyPaymentSchedule());
+              }}
+              onSchedule={setPaymentSchedule}
+            />
+          </div>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <Field label="Payment">
-              <TextArea rows={2} disabled={!canEdit} value={paymentTerms} onChange={(event) => setPaymentTerms(event.target.value)} />
-            </Field>
             <Field label="Delivery">
               <TextArea rows={2} disabled={!canEdit} value={deliveryTerms} onChange={(event) => setDeliveryTerms(event.target.value)} />
             </Field>

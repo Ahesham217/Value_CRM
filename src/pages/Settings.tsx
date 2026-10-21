@@ -155,7 +155,7 @@ export function SettingsPage() {
       additional_notes: terms.additional_notes,
     }).eq("id", 1);
     if (updateError) setError(errorText(updateError));
-    else setMessage("Default terms saved. They are copied onto new drafts and remain editable on each PI.");
+    else setMessage("Default terms saved. Delivery, price basis, warranty, and notes are copied onto new drafts. The legacy payment paragraph is not.");
   }
 
   async function submitUser(event: FormEvent) {
@@ -284,7 +284,11 @@ export function SettingsPage() {
       {tab === "terms" && terms ? (
         <section className="rounded-[10px] border border-line bg-white p-6">
           <form onSubmit={saveTerms} className="grid gap-3">
-            <Field label="Payment terms"><input className={controlClass} value={terms.payment_terms} onChange={(event) => setTerms({ ...terms, payment_terms: event.target.value })} /></Field>
+            <div>
+              <p className="text-[13px] font-medium text-muted">Legacy payment paragraph</p>
+              <p className="mt-1 text-sm text-ink">{terms.payment_terms.trim() ? terms.payment_terms : "No legacy payment paragraph is stored."}</p>
+              <p className="mt-1 text-xs text-slate-500">This paragraph is kept for legacy compatibility. It is not copied onto new proforma invoices and it does not configure the payment schedule. New drafts use a payment schedule on the PI. Delivery, price basis, warranty, and notes are still copied onto each new draft.</p>
+            </div>
             <Field label="Delivery terms"><input className={controlClass} value={terms.delivery_terms} onChange={(event) => setTerms({ ...terms, delivery_terms: event.target.value })} /></Field>
             <Field label="Price basis"><input className={controlClass} value={terms.price_basis} onChange={(event) => setTerms({ ...terms, price_basis: event.target.value })} /></Field>
             <Field label="Warranty"><input className={controlClass} value={terms.warranty} onChange={(event) => setTerms({ ...terms, warranty: event.target.value })} /></Field>

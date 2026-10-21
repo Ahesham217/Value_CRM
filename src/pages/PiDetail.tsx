@@ -5,10 +5,28 @@ import { Banner, Button, Disclosure, Menu, Select, StatusBadge, buttonClass } fr
 import { downloadIssuedPdf } from "../lib/documents";
 import { errorText } from "../lib/errors";
 import { formatDate, formatMoney, formatQuantity, officeLabel } from "../lib/format";
+import { previewPaymentSchedule, readPaymentSchedule } from "../lib/payment-schedule";
 import { can } from "../lib/permissions";
 import { supabase } from "../lib/supabase";
 import type { PiLine, PiListRow, PiVersion, ProformaInvoice, TrackingStatus } from "../lib/types";
 import { adjustmentRows, moneyLabel, taxExclusionNotes } from "../lib/workspace-view";
+
+function paymentDescription(pi: ProformaInvoice, latest: PiVersion | null): string {
+  if (latest?.snapshot.payment?.customer_text) return latest.snapshot.payment.customer_text;
+  if (latest?.snapshot.terms?.payment_terms) return latest.snapshot.terms.payment_terms;
+  if (pi.payment_schedule) {
+    try {
+      const schedule = readPaymentSchedule(pi.payment_schedule);
+      if (!schedule) return "The saved payment schedule could not be read.";
+      const preview = previewPaymentSchedule(schedule, pi.currency, pi.grand_total == null ? null : String(pi.grand_total));
+      if (preview.customerText) return preview.customerText;
+      if (preview.issues.length > 0) return preview.issues.map((issue) => issue.message).join(" ");
+    } catch (caught) {
+      return caught instanceof Error ? caught.message : "The saved payment schedule could not be read.";
+    }
+  }
+  return pi.payment_terms.trim() ? pi.payment_terms : "No payment terms yet.";
+}
 
 function downloadNoticeFrom(state: unknown): string {
   if (!state || typeof state !== "object" || !("downloadNotice" in state)) return "";
@@ -227,6 +245,11 @@ export function PiDetailPage() {
           <div>
             <dt className="text-xs text-slate-500">Prepared by</dt>
             <dd>{latest?.snapshot.sales.prepared_by || listRow?.prepared_by_name || "Not recorded yet"}</dd>
+          </div>
+          <div className="sm:col-span-2 lg:col-span-3">
+            <dt className="text-xs text-slate-500">{latest?.snapshot.payment ? "Payment schedule" : pi.payment_schedule ? "Payment schedule" : "Legacy payment terms"}</dt>
+            <dd className="mt-1 whitespace-pre-wrap">{paymentDescription(pi, latest)}</dd>
+            {pi.draft_open && versions.length > 0 ? <p className="mt-1 text-xs text-slate-500">The open revision is edited separately. This is the latest issued agreement.</p> : null}
           </div>
           {pi.customer_reference ? <div><dt className="text-xs text-slate-500">Customer / SO reference</dt><dd>{pi.customer_reference}</dd></div> : null}
           {!pi.ship_same_as_billing ? <div><dt className="text-xs text-slate-500">Shipping</dt><dd>Shipping address differs from billing.</dd></div> : null}
