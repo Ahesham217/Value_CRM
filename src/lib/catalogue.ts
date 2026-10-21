@@ -1,7 +1,7 @@
 import { rankProducts } from "./catalogue-rank";
 import { escapeIlike, isUniqueModelConflict } from "./model-identity";
 import { supabase } from "./supabase";
-import type { CurrencyCode, Product, Vendor } from "./types";
+import type { BillingType, CurrencyCode, Product, Vendor } from "./types";
 
 export type CatalogueProduct = {
   id: string;
@@ -13,6 +13,7 @@ export type CatalogueProduct = {
   sell_price_egp: string | number | null;
   sell_price_usd: string | number | null;
   sell_price_eur: string | number | null;
+  billing_type: BillingType;
   archived_at: string | null;
   vendor_name: string;
   vendor_archived: boolean;
@@ -49,6 +50,7 @@ export function toCatalogueProduct(row: Product): CatalogueProduct {
     sell_price_egp: row.sell_price_egp,
     sell_price_usd: row.sell_price_usd,
     sell_price_eur: row.sell_price_eur,
+    billing_type: row.billing_type ?? "one_time",
     archived_at: row.archived_at,
     vendor_name: vendor?.company_name ?? "",
     vendor_archived: Boolean(vendor?.archived_at),
@@ -65,6 +67,7 @@ type LookupRow = {
   sell_price_egp: string | number | null;
   sell_price_usd: string | number | null;
   sell_price_eur: string | number | null;
+  billing_type?: BillingType;
   archived_at: string | null;
   vendor_name: string;
   vendor_archived_at: string | null;
@@ -81,6 +84,7 @@ function fromLookup(row: LookupRow): CatalogueProduct {
     sell_price_egp: row.sell_price_egp,
     sell_price_usd: row.sell_price_usd,
     sell_price_eur: row.sell_price_eur,
+    billing_type: row.billing_type ?? "one_time",
     archived_at: row.archived_at,
     vendor_name: row.vendor_name,
     vendor_archived: Boolean(row.vendor_archived_at),

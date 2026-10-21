@@ -18,6 +18,9 @@ function paymentDescription(pi: ProformaInvoice, latest: PiVersion | null): stri
     try {
       const schedule = readPaymentSchedule(pi.payment_schedule);
       if (!schedule) return "The saved payment schedule could not be read.";
+      if (schedule.schema_version === 2) {
+        return "This payment schedule keeps the subscription charge in advance and applies the other rows only to the one-time amount. Open the draft to see the allocation.";
+      }
       const preview = previewPaymentSchedule(schedule, pi.currency, pi.grand_total == null ? null : String(pi.grand_total));
       if (preview.customerText) return preview.customerText;
       if (preview.issues.length > 0) return preview.issues.map((issue) => issue.message).join(" ");
@@ -284,7 +287,15 @@ export function PiDetailPage() {
               ) : lines.map((line) => (
                 <tr key={line.id} className="border-t border-slate-100">
                   <td className="px-2 py-1.5">{line.model_code || "—"}</td>
-                  <td className="max-w-md px-2 py-1.5 whitespace-pre-wrap">{line.description}</td>
+                  <td className="max-w-md px-2 py-1.5 whitespace-pre-wrap">
+                    {line.description}
+                    {line.subscription_agreement?.customer_text ? (
+                      <span className="mt-1 block text-xs text-slate-600">{line.subscription_agreement.customer_text}</span>
+                    ) : null}
+                    {line.subscription_agreement && line.unit_price != null && line.subscription_agreement.catalogue_first_year_unit_price !== String(line.subscription_agreement.negotiated_first_year_unit_price) ? (
+                      <span className="mt-1 block text-xs text-slate-600">Negotiated Year 1 price. Catalogue Year 1 price {line.subscription_agreement.catalogue_first_year_unit_price}.</span>
+                    ) : null}
+                  </td>
                   <td className="px-2 py-1.5 whitespace-nowrap">{formatQuantity(line.quantity)} {line.unit}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{formatMoney(line.unit_price, currency)}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{formatMoney(line.line_total, currency)}</td>

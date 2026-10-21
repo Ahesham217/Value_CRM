@@ -7,6 +7,7 @@ import {
   PI_HISTORY_TITLE,
   historyDiscountDetail,
   historyLegacyDetail,
+  historySubscriptionDetail,
   historyRowHref,
   historySourceText,
   parseProductHistory,
@@ -41,6 +42,8 @@ function row(overrides: Partial<ProductHistoryRow> = {}): ProductHistoryRow {
     discount_type: "none",
     discount_value: null,
     discount_amount: null,
+    current_subscription_year: null,
+    commitment_years: null,
     ...overrides,
   };
 }
@@ -49,9 +52,8 @@ describe("product PI history presentation", () => {
   it("uses the history headings and keeps quoted prices distinct from invoice discounts", () => {
     expect(PI_HISTORY_TITLE).toBe("PI history");
     expect(PI_HISTORY_SUBTITLE).toBe("Where this product has been quoted");
-    expect(PI_HISTORY_PRICE_NOTE).toBe(
-      "Quoted unit prices are before invoice-wide discounts, tax and charges.",
-    );
+    expect(PI_HISTORY_PRICE_NOTE).toContain("before invoice-wide discounts, tax and charges");
+    expect(PI_HISTORY_PRICE_NOTE).toContain("saved price of the year included");
     expect(PI_HISTORY_STATUS_NOTE).toContain("invoice's current status");
     expect(PI_HISTORY_PRICE_NOTE.toLowerCase()).not.toContain("illustrative");
   });
@@ -65,6 +67,8 @@ describe("product PI history presentation", () => {
     expect(quotedUnitPriceLabel("10.50")).toBe("10.50");
     expect(quotedQuantityLabel("2", "licenses")).toBe("2 licenses");
     expect(quotedQuantityLabel("1.5000", "set")).toBe("1.5 set");
+    expect(historySubscriptionDetail(row({ current_subscription_year: "1", commitment_years: "3" }))).toContain("Year 1 of a 3-year commitment");
+    expect(historySubscriptionDetail(row())).toBeNull();
   });
 
   it("distinguishes latest issued, older revisions, new drafts, and revision drafts", () => {

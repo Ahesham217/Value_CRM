@@ -9,6 +9,7 @@ import {
   PI_HISTORY_SUBTITLE,
   PI_HISTORY_TITLE,
   historyDiscountDetail,
+  historySubscriptionDetail,
   historyLegacyDetail,
   historyRowHref,
   historySourceText,
@@ -220,7 +221,10 @@ export function ProductPiHistory({ productId, refreshKey = 0 }: { productId: str
                         <td className={tdClass}>{row.client_name || "—"}</td>
                         <td className={`${tdClass} whitespace-nowrap`}>{formatDate(row.pi_date)}</td>
                         <td className={`${tdClass} whitespace-nowrap text-right tabular-nums`}>{quotedQuantityLabel(row.quantity, row.unit)}</td>
-                        <td className={`${tdClass} whitespace-nowrap text-right tabular-nums`}>{quotedUnitPriceLabel(row.unit_price)}</td>
+                        <td className={`${tdClass} whitespace-nowrap text-right tabular-nums`}>
+                          {quotedUnitPriceLabel(row.unit_price)}
+                          {historySubscriptionDetail(row) ? <span className="mt-0.5 block text-xs font-normal text-muted">{historySubscriptionDetail(row)}</span> : null}
+                        </td>
                         <td className={tdClass}>{row.currency || "—"}</td>
                         <td className={tdClass}><StatusBadge status={row.pi_status} /></td>
                         <td className={tdClass}>

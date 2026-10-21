@@ -11,6 +11,7 @@ import { errorText, isConflict } from "../lib/errors";
 import { formatMoney } from "../lib/format";
 import { calculateDocument } from "../lib/money";
 import { emptyPaymentSchedule, issueList, previewPaymentSchedule, readPaymentSchedule, type PaymentSchedule } from "../lib/payment-schedule";
+import { commitmentCustomerText, convertScheduleToAllocation, previewAllocatedPayment, subscriptionScheduleMessage, type PortionLine } from "../lib/subscription";
 import { numericInputValue } from "../lib/numeric-input";
 import { can } from "../lib/permissions";
 import { editorLineFromStored, generationBlock, isBlankPlaceholder, isResolvedLine, linesForDraft, type EditorLine } from "../lib/pi-lines";
@@ -28,6 +29,7 @@ import {
   type PiSnapshot,
   type PresetCode,
   type Product,
+  type ProductCommitmentOption,
   type Profile,
   type ProformaInvoice,
 } from "../lib/types";
@@ -91,6 +93,7 @@ export function PiEditorPage() {
   const [selectedSales, setSelectedSales] = useState<string[]>([]);
   const [leadId, setLeadId] = useState("");
   const [lines, setLines] = useState<EditorLine[]>([]);
+  const [commitments, setCommitments] = useState<ProductCommitmentOption[]>([]);
   const [discountType, setDiscountType] = useState<DiscountType>("none");
   const [discountValue, setDiscountValue] = useState("");
   const [shippingOn, setShippingOn] = useState(false);
@@ -188,6 +191,7 @@ export function PiEditorPage() {
         vendor_id: product.vendor_id,
         vendor_name: product.vendor_name,
         vendor_archived: product.vendor_archived,
+        billing_type: product.billing_type,
       } : null);
     }));
     setPresets((presetResult.data ?? []) as CompanyPreset[]);
@@ -215,6 +219,27 @@ export function PiEditorPage() {
     load(id).catch((caught) => setError(errorText(caught))).finally(() => setLoading(false));
   }, [id]);
 
+  const commitmentProductIds = lines.flatMap((line) => (line.product ? [line.product.id] : [])).sort().join(",");
+  useEffect(() => {
+    const ids = commitmentProductIds ? commitmentProductIds.split(",") : [];
+    if (ids.length === 0) {
+      setCommitments([]);
+      return;
+    }
+    let active = true;
+    supabase.from("product_commitment_options").select("*").in("product_id", ids).then((result) => {
+      if (!active) return;
+      if (result.error) {
+        setError(errorText(result.error));
+        return;
+      }
+      setCommitments((result.data ?? []) as ProductCommitmentOption[]);
+    });
+    return () => {
+      active = false;
+    };
+  }, [commitmentProductIds]);
+
   const totals = useMemo(() => {
     try {
       return {
@@ -241,13 +266,48 @@ export function PiEditorPage() {
   }, [bankCharge, bankOn, discountType, discountValue, installation, installationOn, lines, shipping, shippingOn, taxEnabled, taxExcludesBank, taxExcludesInstallation, taxExcludesShipping, taxPercent]);
 
   const paymentGrandTotal = totals.value && totals.value.unpricedCount === 0 ? totals.value.grandTotal : null;
+  const hasSubscription = lines.some((line) => isResolvedLine(line) && line.product?.billingType === "subscription");
+  const needsConversion = hasSubscription && (paymentMode === "legacy" || paymentSchedule.schema_version !== 2);
+  const conversionMessage = needsConversion
+    ? subscriptionScheduleMessage(paymentMode === "legacy" ? "legacy" : "grand_total")
+    : null;
+  const portionLines: PortionLine[] = lines.map((line, index) => ({
+    position: index + 1,
+    billingType: line.product?.billingType === "subscription" ? "subscription" : "one_time",
+    lineTotal: totals.value?.lines[index]?.lineTotal ?? null,
+    obligationId: line.subscription?.obligationId ?? null,
+    productId: line.product?.id ?? null,
+  }));
   const paymentPreview = useMemo(
     () => previewPaymentSchedule(paymentSchedule, currency, paymentGrandTotal),
     [currency, paymentGrandTotal, paymentSchedule],
   );
+  const allocatedPreview = useMemo(() => {
+    if (paymentSchedule.schema_version !== 2 || !totals.value || paymentGrandTotal == null) return null;
+    return previewAllocatedPayment({
+      schedule: paymentSchedule,
+      currency,
+      lines: portionLines,
+      discountAmount: totals.value.discountAmount,
+      shipping: totals.value.shipping,
+      installation: totals.value.installation,
+      bankCharge: totals.value.bankCharge,
+      taxAmount: totals.value.taxAmount,
+      taxEnabled,
+      taxExcludesShipping,
+      taxExcludesInstallation,
+      taxExcludesBankCharge: taxExcludesBank,
+      grandTotal: paymentGrandTotal,
+    });
+  }, [currency, paymentGrandTotal, paymentSchedule, portionLines, taxEnabled, taxExcludesBank, taxExcludesInstallation, taxExcludesShipping, totals.value]);
 
   function paymentIssue(): string | null {
+    if (needsConversion) return conversionMessage;
     if (paymentMode === "legacy") return null;
+    if (paymentSchedule.schema_version === 2) {
+      if (allocatedPreview?.ready) return null;
+      return issueList(allocatedPreview?.issues ?? []) || "Complete the payment allocation before continuing.";
+    }
     if (paymentPreview.ready) return null;
     return issueList(paymentPreview.issues) || "Complete the payment schedule before continuing.";
   }
@@ -271,6 +331,8 @@ export function PiEditorPage() {
       unit: line.unit,
       quantity: line.quantity,
       unitPrice: line.unitPrice,
+      commitmentOptionId: line.subscription?.optionId ?? "",
+      laterYearBase: line.subscription?.laterYearBaseUnitPrice ?? "",
     })),
     discountType,
     discountValue,
@@ -356,9 +418,11 @@ export function PiEditorPage() {
     const contact = contacts.find((item) => item.id === contactId);
     const calculated = totals.value;
     return {
-      layout_version: paymentMode === "structured"
-        ? (preset.layout === "uae" ? "uae-v2" : "egypt-v2")
-        : (preset.layout === "uae" ? "uae-v1" : "egypt-v1"),
+      layout_version: paymentMode !== "structured"
+        ? (preset.layout === "uae" ? "uae-v1" : "egypt-v1")
+        : paymentSchedule.schema_version === 2
+          ? (preset.layout === "uae" ? "uae-v3" : "egypt-v3")
+          : (preset.layout === "uae" ? "uae-v2" : "egypt-v2"),
       preset_code: preset.code,
       office: preset.office,
       currency: preset.currency,
@@ -417,6 +481,30 @@ export function PiEditorPage() {
           quantity: line.quantity,
           unit_price: line.unitPrice,
           line_total: calculated.lines[index]?.lineTotal ?? "",
+          subscription: line.subscription ? {
+            schema_version: 1 as const,
+            option_id: line.subscription.optionId,
+            obligation_id: line.subscription.obligationId,
+            product_id: line.product.id,
+            billing_type: "subscription" as const,
+            commitment_years: line.subscription.commitmentYears,
+            currency: line.subscription.currency,
+            current_year: 1 as const,
+            catalogue_first_year_unit_price: line.subscription.catalogueFirstYearUnitPrice,
+            negotiated_first_year_unit_price: line.unitPrice,
+            later_year_rule: line.subscription.laterYearRule,
+            later_year_base_unit_price: line.subscription.laterYearBaseUnitPrice,
+            catalogue_later_year_base_unit_price: line.subscription.catalogueLaterYearBaseUnitPrice,
+            adjustment_compounds: false as const,
+            payable_in_advance: true as const,
+            customer_text: commitmentCustomerText({
+              currency: line.subscription.currency,
+              commitmentYears: line.subscription.commitmentYears,
+              currentYearUnitPrice: line.unitPrice || "0",
+              laterYearRule: line.subscription.laterYearRule,
+              laterYearBaseUnitPrice: line.subscription.laterYearBaseUnitPrice,
+            }),
+          } : null,
         }];
       }),
       adjustments: {
@@ -439,12 +527,18 @@ export function PiEditorPage() {
       },
       terms: {
         price_basis: priceBasis,
-        payment_terms: paymentMode === "structured" ? (paymentPreview.customerText ?? "") : paymentTerms,
+        payment_terms: paymentMode === "structured"
+          ? (paymentSchedule.schema_version === 2 ? (allocatedPreview?.customerText ?? "") : (paymentPreview.customerText ?? ""))
+          : paymentTerms,
         delivery_terms: deliveryTerms,
         warranty,
         additional_notes: notes,
       },
-      payment: paymentMode === "structured" ? paymentPreview.canonical : null,
+      payment: paymentMode !== "structured"
+        ? null
+        : paymentSchedule.schema_version === 2
+          ? (allocatedPreview?.canonical ?? null)
+          : paymentPreview.canonical,
     };
   }
 
@@ -837,6 +931,7 @@ export function PiEditorPage() {
       <PiItemSection
         lines={lines}
         currency={currency}
+        commitments={commitments}
         canEdit={canEdit}
         canManageProducts={can(profile, "can_manage_products")}
         totals={(totals.value?.lines ?? []).map((line) => line.lineTotal)}
@@ -858,6 +953,17 @@ export function PiEditorPage() {
               schedule={paymentSchedule}
               currency={currency}
               grandTotal={paymentGrandTotal}
+              percentageOf={paymentSchedule.schema_version === 2 ? "one_time" : "grand_total"}
+              percentageBase={allocatedPreview?.allocation?.oneTimeTotal ?? null}
+              allocationNote={needsConversion ? null : allocatedPreview?.explanation ?? null}
+              customerText={paymentSchedule.schema_version === 2 ? allocatedPreview?.customerText ?? null : null}
+              conversionMessage={conversionMessage}
+              onConvert={() => {
+                setPaymentMode("structured");
+                setPaymentSchedule(convertScheduleToAllocation(paymentMode === "legacy" ? null : paymentSchedule));
+              }}
+              residualRequired={allocatedPreview?.allocation?.residualRequired ?? false}
+              allocationIssues={paymentSchedule.schema_version === 2 ? (allocatedPreview?.issues ?? null) : null}
               canEdit={canEdit}
               showLegacyCancel={loadedLegacy}
               onLegacyText={setPaymentTerms}

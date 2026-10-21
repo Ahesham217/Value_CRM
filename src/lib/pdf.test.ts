@@ -655,6 +655,90 @@ describe("PI pdf", () => {
     await expect(renderPiPdf(broken)).rejects.toThrow(/payment schedule/);
   });
 
+  it("prints the saved commitment and only the current-year total on layout v3", async () => {
+    const obligationId = "33333333-3333-4333-8333-333333333333";
+    const productId = "44444444-4444-4444-8444-444444444444";
+    const issued = snapshot({
+      layout_version: "uae-v3",
+      currency: "USD",
+      preset_code: "AE-USD",
+      office: "AE",
+      lines: [{
+        model_code: "PLAN-1",
+        description: "Support plan",
+        unit: "license",
+        quantity: "2",
+        unit_price: "1950.00",
+        line_total: "3900.00",
+        product_id: productId,
+        subscription: {
+          schema_version: 1,
+          option_id: "55555555-5555-4555-8555-555555555555",
+          obligation_id: obligationId,
+          product_id: productId,
+          billing_type: "subscription",
+          commitment_years: 3,
+          currency: "USD",
+          current_year: 1,
+          catalogue_first_year_unit_price: "1950.00",
+          negotiated_first_year_unit_price: "1950.00",
+          later_year_rule: "vendor_confirmed_base_adjustment",
+          later_year_base_unit_price: "1950.00",
+          catalogue_later_year_base_unit_price: "1950.00",
+          adjustment_compounds: false,
+          payable_in_advance: true,
+          customer_text: "Three-year commitment. Year 1: USD 1,950.00 per unit. Years 2 and 3: USD 1,950.00 per unit plus the applicable vendor-confirmed CPI adjustment for each year. Each annual adjustment is applied independently to the USD 1,950.00 base. Each year is payable 100% in advance. Only Year 1 is included in this PI total.",
+        },
+      }],
+      adjustments: {
+        ...snapshot().adjustments,
+        subtotal: "3900.00",
+        net_items: "3900.00",
+        grand_total: "3900.00",
+      },
+      payment: {
+        schema_version: 2,
+        currency: "USD",
+        grand_total: "3900.00",
+        subscription_total: "3900.00",
+        one_time_total: "0.00",
+        customer_text: "Subscription charges of USD 3,900.00 are payable 100% in advance.",
+        presentation: "paragraph",
+        no_payment_due: false,
+        subscription_obligations: [{
+          id: obligationId,
+          product_id: productId,
+          position: 1,
+          amount: "3900.00",
+          due_formula: "payable 100% in advance",
+        }],
+        rows: [],
+        allocation: { residual_target: null, residual_applied: false, lines: [] },
+      },
+    });
+    const { text } = await textOf(await renderPiPdf(issued));
+    expect(text).toContain("Three-year commitment");
+    expect(text).toMatch(/Only\s+Year 1 is included in this PI total/);
+    expect(text).toContain("3,900.00");
+    expect(text).not.toContain("11,700");
+    expect(text).not.toContain(obligationId);
+    expect(text).not.toContain(productId);
+    expect(text).not.toContain("purchase");
+    const legacy = await textOf(await renderPiPdf(snapshot({ layout_version: "egypt-v1" })));
+    expect(legacy.text).not.toContain("Three-year commitment");
+    const previous = await textOf(await renderPiPdf(snapshot({ layout_version: "uae-v2", payment: {
+      schema_version: 1,
+      currency: "EGP",
+      grand_total: "200.00",
+      customer_text: "100% advance payment upon order confirmation.",
+      presentation: "paragraph",
+      no_payment_due: false,
+      rows: [],
+    } })));
+    expect(previous.text).toContain("100% advance payment upon order confirmation.");
+    expect(previous.text).not.toContain("Three-year commitment");
+  });
+
   it("reports a snapshot that is missing saved rendering data", async () => {
     const issued = snapshot();
     const broken = { ...issued, company: undefined } as unknown as PiSnapshot;

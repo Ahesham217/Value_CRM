@@ -4,7 +4,7 @@ import type { FilterChip } from "./workspace-view";
 export const PI_HISTORY_TITLE = "PI history";
 export const PI_HISTORY_SUBTITLE = "Where this product has been quoted";
 export const PI_HISTORY_PRICE_NOTE =
-  "Quoted unit prices are before invoice-wide discounts, tax and charges.";
+  "Quoted unit prices are before invoice-wide discounts, tax and charges. For a subscription, this is the saved price of the year included in that PI. Later years are not included.";
 export const PI_HISTORY_STATUS_NOTE =
   "PI status is the invoice's current status. Draft rows show saved draft values.";
 export const LEGACY_MODEL_MATCH =
@@ -36,6 +36,8 @@ export type ProductHistoryRow = {
   discount_type: string;
   discount_value: string | null;
   discount_amount: string | null;
+  current_subscription_year: string | null;
+  commitment_years: string | null;
 };
 
 export type ProductHistoryPage = {
@@ -196,7 +198,20 @@ function parseRow(value: unknown): ProductHistoryRow {
     discount_type: typeof row.discount_type === "string" ? row.discount_type : "none",
     discount_value: textOrNull(row.discount_value),
     discount_amount: textOrNull(row.discount_amount),
+    current_subscription_year: textOrNull(row.current_subscription_year),
+    commitment_years: textOrNull(row.commitment_years),
   };
+}
+
+export function historySubscriptionDetail(
+  row: Pick<ProductHistoryRow, "current_subscription_year" | "commitment_years">,
+): string | null {
+  if (!row.current_subscription_year || !row.commitment_years) return null;
+  const years = Number(row.commitment_years);
+  const year = row.current_subscription_year;
+  if (!Number.isInteger(years) || years < 1) return null;
+  const span = years === 1 ? "a one-year commitment" : `a ${years}-year commitment`;
+  return `Year ${year} of ${span}. This is the saved current-year unit price. Later years are not included.`;
 }
 
 function stringList(value: unknown, label: string): string[] {

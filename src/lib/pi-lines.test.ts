@@ -26,6 +26,7 @@ function choice(overrides: Partial<CatalogueChoice> = {}): CatalogueChoice {
     description: "Controller",
     unit: "set",
     unit_price: "12.50",
+    billing_type: "one_time",
     ...overrides,
   };
 }
@@ -44,6 +45,7 @@ function storedLine(overrides: Partial<PiLine> = {}): PiLine {
     quantity: "2",
     unit_price: "9.00",
     line_total: "18.00",
+    subscription_agreement: null,
     ...overrides,
   };
 }
@@ -79,6 +81,7 @@ describe("PI item lines", () => {
         unit: "set",
         quantity: "4",
         unit_price: "0",
+        subscription: null,
       },
     ]);
   });

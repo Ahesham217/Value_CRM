@@ -59,11 +59,15 @@ export type PaymentRow = {
   instalments: InstalmentPlan | null;
 };
 
+export type ResidualTarget = "subscription" | "one_time";
+
 export type PaymentSchedule = {
-  schema_version: typeof PAYMENT_SCHEMA_VERSION;
+  schema_version: 1 | 2;
   no_payment_due: boolean;
   dates_need_review: boolean;
   rows: PaymentRow[];
+  /** Used only by schema version 2, and only when priced lines cannot carry the charges. */
+  residual_target?: ResidualTarget | null;
 };
 
 export type ScheduleIssue = {
@@ -295,7 +299,7 @@ export function parsePaymentSchedule(value: unknown): PaymentSchedule {
     throw new Error("The saved payment schedule could not be read.");
   }
   const record = value as Record<string, unknown>;
-  if (record.schema_version !== PAYMENT_SCHEMA_VERSION) {
+  if (record.schema_version !== 1 && record.schema_version !== 2) {
     throw new Error("This payment schedule uses a version this application cannot read.");
   }
   if (!Array.isArray(record.rows)) {
@@ -305,19 +309,34 @@ export function parsePaymentSchedule(value: unknown): PaymentSchedule {
     throw new Error(`A payment schedule can contain at most ${MAX_PAYMENT_ROWS} payments.`);
   }
   return {
-    schema_version: PAYMENT_SCHEMA_VERSION,
+    schema_version: record.schema_version,
     no_payment_due: record.no_payment_due === true,
     dates_need_review: record.dates_need_review === true,
     rows: record.rows.map((row, index) => parseRow(row, index)),
+    ...(record.schema_version === 2 ? { residual_target: parseResidualTarget(record.residual_target) } : {}),
   };
+}
+
+function parseResidualTarget(value: unknown): ResidualTarget | null {
+  if (value == null) return null;
+  if (value === "subscription" || value === "one_time") return value;
+  throw new Error("The saved payment schedule could not be read.");
 }
 
 export function previewPaymentSchedule(
   schedule: PaymentSchedule,
   currency: CurrencyCode | null,
   grandTotal: string | null,
+  options?: { base?: "grand_total" | "one_time" },
 ): PaymentPreview {
   const issues: ScheduleIssue[] = [];
+  if (schedule.schema_version === 2 && options?.base !== "one_time") {
+    issues.push({
+      rowId: null,
+      message: "This payment schedule separates subscription charges from one-time items. It cannot be read as a percentage of the PI total.",
+    });
+    return emptyPreview(issues);
+  }
   if (!currency || !CURRENCIES.has(currency)) {
     issues.push({ rowId: null, message: "Choose an office and currency before the payment amounts can be calculated." });
     return emptyPreview(issues);
@@ -497,10 +516,11 @@ export function copyPaymentScheduleForDuplicate(schedule: PaymentSchedule): Paym
     };
   });
   return {
-    schema_version: PAYMENT_SCHEMA_VERSION,
+    schema_version: schedule.schema_version,
     no_payment_due: schedule.no_payment_due,
     dates_need_review: cleared,
     rows,
+    ...(schedule.schema_version === 2 ? { residual_target: schedule.residual_target ?? null } : {}),
   };
 }
 
