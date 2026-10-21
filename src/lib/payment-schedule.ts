@@ -603,7 +603,12 @@ function balanceAmounts(
   const percentOnly = !remainder && others.length > 0 && others.every((entry) => entry.basis === "percent" && entry.percent !== null);
   if (percentOnly) {
     const percentSum = others.reduce((totalPercent, entry) => totalPercent.plus(entry.percent ?? 0), new Decimal(0));
-    if (percentSum.eq(100)) {
+    if (!percentSum.eq(100)) {
+      issues.push({
+        rowId: null,
+        message: `Percentage-only payments must total exactly 100%. They currently total ${displayPercent(percentSum.toFixed(4))}%.`,
+      });
+    } else {
       const diff = total.minus(sum);
       if (!diff.isZero()) {
         const limit = new Decimal(others.length).mul("0.01");
@@ -769,14 +774,20 @@ function validateOffset(
   }
 }
 
+function instalmentCountInRange(count: number | null): count is number {
+  return count != null && Number.isSafeInteger(count) && count >= 2 && count <= MAX_INSTALMENTS;
+}
+
 function previewRow(entry: ResolvedAmount, currency: CurrencyCode): PaymentRowPreview {
   const timing = contractualTiming(entry.row);
+  const plan = entry.row.instalments;
+  const count = plan?.count ?? null;
   return {
     id: entry.row.id,
     amount: entry.amount ? money(entry.amount) : null,
     contractual: timing.contractual,
     pending: timing.pending,
-    instalments: entry.amount && entry.row.instalments
+    instalments: entry.amount && plan && instalmentCountInRange(count)
       ? expandInstalments(entry.row, entry.amount, currency, entry.index).instalments
       : null,
   };
@@ -784,7 +795,9 @@ function previewRow(entry: ResolvedAmount, currency: CurrencyCode): PaymentRowPr
 
 function canonicalRow(entry: ResolvedAmount, index: number, currency: CurrencyCode): CanonicalPaymentRow {
   const amount = entry.amount ?? new Decimal(0);
-  const expanded = entry.row.instalments ? expandInstalments(entry.row, amount, currency, entry.index) : null;
+  const expanded = entry.row.instalments && instalmentCountInRange(entry.row.instalments.count)
+    ? expandInstalments(entry.row, amount, currency, entry.index)
+    : null;
   const timing = contractualTiming(entry.row);
   return {
     id: entry.row.id,
@@ -849,7 +862,7 @@ function expandInstalments(
   index: number,
 ): { instalments: CanonicalInstalment[]; groupFormula: string; error: string | null } {
   const plan = row.instalments;
-  if (!plan || plan.count == null || !plan.frequency || plan.first.type === "unset") {
+  if (!plan || !instalmentCountInRange(plan.count) || (plan.frequency !== "monthly" && plan.frequency !== "yearly") || plan.first.type === "unset") {
     return { instalments: [], groupFormula: "", error: null };
   }
   const parts = splitInstalments(amount, plan.count);
@@ -877,7 +890,7 @@ function expandInstalments(
 }
 
 export function splitInstalments(total: Decimal, count: number): Decimal[] {
-  if (!Number.isInteger(count) || count < 1) throw new Error("Invalid instalment count.");
+  if (!Number.isSafeInteger(count) || count < 1 || count > MAX_INSTALMENTS) return [];
   const regular = roundMoney(total.div(count));
   const amounts: Decimal[] = [];
   let sum = new Decimal(0);
@@ -1184,8 +1197,14 @@ function nullableString(value: unknown): string | null {
 
 function nullableInteger(value: unknown): number | null {
   if (value == null || value === "") return null;
-  if (typeof value === "number" && Number.isInteger(value)) return value;
-  if (typeof value === "string" && /^\d+$/.test(value.trim())) return Number(value.trim());
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
+      const parsed = Number(trimmed);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
   return null;
 }
 

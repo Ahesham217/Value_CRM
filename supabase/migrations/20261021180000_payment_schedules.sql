@@ -1,10 +1,13 @@
 -- Structured payment schedules for proforma invoices.
 -- A null payment_schedule keeps the legacy payment_terms paragraph.
 -- Existing pi_versions rows are not rewritten.
--- New drafts get an empty structured schedule, so apply this migration
--- together with the frontend that edits that schedule. Applying it while
--- the previous frontend is still issuing PIs would make new drafts unissuable
--- from that frontend.
+-- New drafts get an empty structured schedule. Do not apply this file while
+-- the previous frontend is what a fresh page load serves, and do not roll
+-- that frontend back after this file is applied. The rollout order, including
+-- open editor tabs, is in README.md.
+-- persist_draft rejects a JSON null, and rejects a missing payment_schedule
+-- key, when the stored draft already has a structured schedule. A stored
+-- null remains a legacy paragraph and can still be saved that way.
 
 alter table public.proforma_invoices
   add column if not exists payment_schedule jsonb;
@@ -326,11 +329,40 @@ begin
   if v_text !~ '^[0-9]+$' then
     raise exception '% must be a whole number.', p_label;
   end if;
-  v_value := v_text::integer;
-  if v_value < p_minimum or v_value > p_maximum then
+  if char_length(v_text) > 9 or v_text::numeric < p_minimum or v_text::numeric > p_maximum then
     raise exception '% is outside the allowed range.', p_label;
   end if;
+  v_value := v_text::integer;
   return v_value;
+end;
+$$;
+
+create or replace function private.payment_event_problem(p_event jsonb, p_label text)
+returns text
+language plpgsql
+immutable
+set search_path = ''
+as $$
+declare
+  v_code text;
+begin
+  if p_event is null or jsonb_typeof(p_event) is distinct from 'object' then
+    return p_label || ': choose the milestone.';
+  end if;
+  if p_event ->> 'type' = 'standard' then
+    v_code := p_event ->> 'code';
+    if v_code is null or v_code not in ('order_confirmation', 'shipment', 'delivery', 'commissioning') then
+      return p_label || ': choose a supported milestone.';
+    end if;
+    return null;
+  end if;
+  if p_event ->> 'type' = 'custom' then
+    if btrim(coalesce(p_event ->> 'label', '')) = '' then
+      return p_label || ': enter a name for the custom milestone.';
+    end if;
+    return null;
+  end if;
+  return p_label || ': choose the milestone.';
 end;
 $$;
 
@@ -352,8 +384,8 @@ begin
   end if;
   if p_event ->> 'type' = 'standard' then
     v_code := p_event ->> 'code';
-    if v_code not in ('order_confirmation', 'shipment', 'delivery', 'commissioning') then
-      raise exception '% uses an unsupported milestone.', p_label;
+    if v_code is null or v_code not in ('order_confirmation', 'shipment', 'delivery', 'commissioning') then
+      raise exception '% needs a supported milestone.', p_label;
     end if;
     return jsonb_build_object('type', 'standard', 'code', v_code);
   end if;
@@ -701,10 +733,11 @@ immutable
 set search_path = ''
 as $$
 declare
-  v_count integer := (p_plan ->> 'count')::integer;
+  v_count integer;
+  v_count_text text := btrim(coalesce(p_plan ->> 'count', ''));
   v_frequency text := p_plan ->> 'frequency';
   v_first jsonb := p_plan -> 'first';
-  v_regular numeric := round(p_amount / v_count, 2);
+  v_regular numeric;
   v_parts numeric[] := '{}';
   v_sequence integer;
   v_due_date date;
@@ -718,6 +751,20 @@ declare
   v_event text;
   v_gap integer;
 begin
+  if v_count_text !~ '^[0-9]+$' or char_length(v_count_text) > 3 then
+    return jsonb_build_object('error', 'instalments must be a whole number from 2 to 120.');
+  end if;
+  if v_count_text::numeric < 2 or v_count_text::numeric > 120 then
+    return jsonb_build_object('error', 'instalments must be a whole number from 2 to 120.');
+  end if;
+  v_count := v_count_text::integer;
+  if v_frequency is null or v_frequency not in ('monthly', 'yearly') then
+    return jsonb_build_object('error', 'choose monthly or yearly instalments.');
+  end if;
+  if p_amount is null or p_amount <= 0 then
+    return jsonb_build_object('error', 'an instalment would be zero. Use fewer instalments or a larger amount.');
+  end if;
+  v_regular := round(p_amount / v_count, 2);
   for v_sequence in 1..v_count - 1 loop
     v_parts[v_sequence] := v_regular;
   end loop;
@@ -942,9 +989,11 @@ begin
 
     v_plan := v_row -> 'instalments';
     if v_plan is not null and jsonb_typeof(v_plan) = 'object' then
-      if v_plan ->> 'count' is null then
+      if v_plan -> 'count' is null or jsonb_typeof(v_plan -> 'count') = 'null' or btrim(coalesce(v_plan ->> 'count', '')) = '' then
         v_errors := private.payment_note(v_errors, v_name || ': enter the number of instalments.');
-      elsif (v_plan ->> 'count')::integer < 2 or (v_plan ->> 'count')::integer > 120 then
+      elsif btrim(v_plan ->> 'count') !~ '^[0-9]+$' or char_length(btrim(v_plan ->> 'count')) > 3 then
+        v_errors := private.payment_note(v_errors, v_name || ': instalments must be a whole number from 2 to 120.');
+      elsif btrim(v_plan ->> 'count')::numeric < 2 or btrim(v_plan ->> 'count')::numeric > 120 then
         v_errors := private.payment_note(v_errors, v_name || ': instalments must be a whole number from 2 to 120.');
       end if;
       if coalesce(v_plan ->> 'frequency', '') not in ('monthly', 'yearly') then
@@ -955,11 +1004,7 @@ begin
       elsif v_plan -> 'first' ->> 'type' = 'date' and nullif(v_plan -> 'first' ->> 'date', '') is null then
         v_errors := private.payment_note(v_errors, v_name || ': enter the first instalment date.');
       elsif v_plan -> 'first' ->> 'type' = 'after_event' then
-        if v_plan -> 'first' -> 'event' is null or jsonb_typeof(v_plan -> 'first' -> 'event') = 'null' then
-          v_errors := private.payment_note(v_errors, v_name || ': choose the milestone.');
-        elsif v_plan -> 'first' -> 'event' ->> 'type' = 'custom' and btrim(coalesce(v_plan -> 'first' -> 'event' ->> 'label', '')) = '' then
-          v_errors := private.payment_note(v_errors, v_name || ': enter a name for the custom milestone.');
-        end if;
+        v_errors := private.payment_note(v_errors, private.payment_event_problem(v_plan -> 'first' -> 'event', v_name));
         if coalesce(v_plan -> 'first' ->> 'unit', '') not in ('days', 'months') then
           v_errors := private.payment_note(v_errors, v_name || ': choose days or calendar months.');
         elsif v_plan -> 'first' ->> 'offset' is null then
@@ -972,17 +1017,9 @@ begin
       elsif v_row -> 'due' ->> 'type' = 'date' and nullif(v_row -> 'due' ->> 'date', '') is null then
         v_errors := private.payment_note(v_errors, v_name || ': enter the due date.');
       elsif v_row -> 'due' ->> 'type' = 'on_event' then
-        if v_row -> 'due' -> 'event' is null or jsonb_typeof(v_row -> 'due' -> 'event') = 'null' then
-          v_errors := private.payment_note(v_errors, v_name || ': choose the milestone.');
-        elsif v_row -> 'due' -> 'event' ->> 'type' = 'custom' and btrim(coalesce(v_row -> 'due' -> 'event' ->> 'label', '')) = '' then
-          v_errors := private.payment_note(v_errors, v_name || ': enter a name for the custom milestone.');
-        end if;
+        v_errors := private.payment_note(v_errors, private.payment_event_problem(v_row -> 'due' -> 'event', v_name));
       elsif v_row -> 'due' ->> 'type' = 'after_event' then
-        if v_row -> 'due' -> 'event' is null or jsonb_typeof(v_row -> 'due' -> 'event') = 'null' then
-          v_errors := private.payment_note(v_errors, v_name || ': choose the milestone.');
-        elsif v_row -> 'due' -> 'event' ->> 'type' = 'custom' and btrim(coalesce(v_row -> 'due' -> 'event' ->> 'label', '')) = '' then
-          v_errors := private.payment_note(v_errors, v_name || ': enter a name for the custom milestone.');
-        end if;
+        v_errors := private.payment_note(v_errors, private.payment_event_problem(v_row -> 'due' -> 'event', v_name));
         if coalesce(v_row -> 'due' ->> 'unit', '') not in ('days', 'months') then
           v_errors := private.payment_note(v_errors, v_name || ': choose days or calendar months.');
         elsif v_row -> 'due' ->> 'offset' is null then
@@ -1007,7 +1044,9 @@ begin
         v_percent_sum := v_percent_sum + v_percent[v_index];
       end if;
     end loop;
-    if v_percent_only and v_percent_sum = 100 then
+    if v_percent_only and v_percent_sum <> 100 then
+      v_errors := private.payment_note(v_errors, 'Percentage-only payments must total exactly 100%. They currently total ' || private.payment_percent_text(v_percent_sum::text) || '%.');
+    elsif v_percent_only and v_percent_sum = 100 then
       v_diff := p_total - v_sum;
       if v_diff <> 0 then
         if abs(v_diff) > (v_count * 0.01) then
@@ -1070,6 +1109,9 @@ begin
     v_due_date := null;
     if v_plan is not null and jsonb_typeof(v_plan) = 'object' then
       v_expanded_json := private.payment_expand_instalments(v_row ->> 'id', v_amount[v_index], v_plan, p_currency);
+      if v_expanded_json ->> 'error' is not null then
+        raise exception '%', coalesce(nullif(btrim(v_row ->> 'label'), ''), 'Payment ' || v_index::text) || ': ' || (v_expanded_json ->> 'error');
+      end if;
       v_groups := v_groups + 1;
       v_expanded := v_expanded + coalesce(jsonb_array_length(v_expanded_json -> 'instalments'), 0);
       v_clauses := array_append(v_clauses, private.payment_amount_phrase(v_row, v_amount[v_index], v_independent[v_index], p_total, p_currency) || ' ' || (v_expanded_json ->> 'formula'));
@@ -1297,6 +1339,9 @@ begin
 
   if p_payload ? 'payment_schedule' then
     if jsonb_typeof(p_payload -> 'payment_schedule') = 'null' then
+      if v_pi.payment_schedule is not null then
+        raise exception 'A structured payment schedule cannot be replaced by the legacy payment paragraph.';
+      end if;
       v_schedule := null;
       v_payment_terms := coalesce(p_payload ->> 'payment_terms', '');
     elsif jsonb_typeof(p_payload -> 'payment_schedule') = 'object' then
@@ -1306,12 +1351,11 @@ begin
       raise exception 'The payment schedule could not be read.';
     end if;
   else
-    v_schedule := v_pi.payment_schedule;
-    if v_pi.payment_schedule is null then
-      v_payment_terms := coalesce(p_payload ->> 'payment_terms', '');
-    else
-      v_payment_terms := '';
+    if v_pi.payment_schedule is not null then
+      raise exception 'This draft has a structured payment schedule. Close this editor and open the PI again before saving.';
     end if;
+    v_schedule := null;
+    v_payment_terms := coalesce(p_payload ->> 'payment_terms', '');
   end if;
 
   update public.proforma_invoices
@@ -1850,6 +1894,7 @@ revoke all on function private.payment_join_clauses(text[]) from public, anon, a
 revoke all on function private.payment_remap_event(jsonb, jsonb) from public, anon, authenticated;
 revoke all on function private.payment_clean_decimal(text, text, integer, numeric) from public, anon, authenticated;
 revoke all on function private.payment_clean_whole(jsonb, text, integer, integer) from public, anon, authenticated;
+revoke all on function private.payment_event_problem(jsonb, text) from public, anon, authenticated;
 revoke all on function private.sanitize_payment_event(jsonb, text) from public, anon, authenticated;
 revoke all on function private.sanitize_payment_schedule(jsonb) from public, anon, authenticated;
 revoke all on function private.payment_label_redundant(text, jsonb) from public, anon, authenticated;

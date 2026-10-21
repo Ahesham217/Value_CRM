@@ -290,7 +290,122 @@ describe("payment amounts", () => {
     ]), USD, "100.00");
     expect(preview.ready).toBe(false);
     expect(preview.unallocated).toBe("0.01");
+    expect(preview.issues.map((issue) => issue.message).join(" ")).toContain("exactly 100%");
     expect(preview.customerText).toBeNull();
+  });
+
+  it("requires percentage-only schedules to total exactly 100 percent", () => {
+    const over = previewPaymentSchedule(schedule([
+      row({ id: ids(1), amount: { type: "percent", percent: "60" }, due: { type: "date", date: "2026-12-01" } }),
+      row({ id: ids(2), amount: { type: "percent", percent: "50" }, due: { type: "date", date: "2026-12-02" } }),
+    ]), USD, "0.02");
+    expect(over.ready).toBe(false);
+    expect(over.customerText).toBeNull();
+    expect(over.issues.map((issue) => issue.message).join(" ")).toContain("exactly 100%");
+    expect(over.issues.map((issue) => issue.message).join(" ")).toContain("110%");
+
+    const rounded = previewPaymentSchedule(schedule([
+      row({ id: ids(1), amount: { type: "percent", percent: "50" }, due: { type: "date", date: "2026-12-01" } }),
+      row({ id: ids(2), amount: { type: "percent", percent: "50" }, due: { type: "date", date: "2026-12-02" } }),
+    ]), USD, "0.03");
+    expect(rounded.ready).toBe(true);
+    expect(rounded.canonical?.rows.map((item) => item.amount)).toEqual(["0.02", "0.01"]);
+
+    const mixed = previewPaymentSchedule(schedule([
+      row({ id: ids(1), amount: { type: "fixed", amount: "0.01" }, due: { type: "date", date: "2026-12-01" } }),
+      row({ id: ids(2), amount: { type: "percent", percent: "50" }, due: { type: "date", date: "2026-12-02" } }),
+    ]), USD, "0.02");
+    expect(mixed.ready).toBe(true);
+    expect(mixed.canonical?.rows.map((item) => item.amount)).toEqual(["0.01", "0.01"]);
+
+    const remainder = previewPaymentSchedule(schedule([
+      row({ id: ids(1), amount: { type: "percent", percent: "60" }, due: { type: "date", date: "2026-12-01" } }),
+      row({ id: ids(2), amount: { type: "remainder" }, due: { type: "date", date: "2026-12-02" } }),
+    ]), USD, "0.02");
+    expect(remainder.ready).toBe(true);
+    expect(remainder.canonical?.rows.map((item) => item.amount)).toEqual(["0.01", "0.01"]);
+  });
+
+  it("returns validation for invalid instalment counts without throwing", () => {
+    expect(splitInstalments(new Decimal("10.00"), 0)).toEqual([]);
+    expect(splitInstalments(new Decimal("10.00"), 1.5)).toEqual([]);
+    expect(splitInstalments(new Decimal("10.00"), -4)).toEqual([]);
+    expect(splitInstalments(new Decimal("10.00"), 10_000_000)).toEqual([]);
+
+    const cases: Array<{ count: number | null; message: string }> = [
+      { count: null, message: "enter the number of instalments" },
+      { count: 0, message: "whole number from 2 to 120" },
+      { count: 1.5, message: "whole number from 2 to 120" },
+      { count: -3, message: "whole number from 2 to 120" },
+      { count: 121, message: "whole number from 2 to 120" },
+      { count: 10_000_000, message: "whole number from 2 to 120" },
+    ];
+    for (const item of cases) {
+      const preview = previewPaymentSchedule(schedule([
+        row({
+          id: ids(1),
+          label: "Balance",
+          amount: { type: "fixed", amount: "100.00" },
+          due: { type: "date", date: "2026-12-01" },
+          instalments: { count: item.count, frequency: "monthly", first: { type: "date", date: "2026-12-01" } },
+        }),
+      ]), USD, "100.00");
+      expect(preview.ready).toBe(false);
+      expect(preview.customerText).toBeNull();
+      expect(preview.canonical).toBeNull();
+      expect(preview.issues.map((issue) => issue.message).join(" ")).toContain(item.message);
+    }
+
+    const parsed = parsePaymentSchedule({
+      schema_version: 1,
+      no_payment_due: false,
+      dates_need_review: false,
+      rows: [{
+        id: ids(1),
+        label: "Balance",
+        amount: { type: "fixed", amount: "100.00" },
+        due: { type: "unset" },
+        instalments: { count: "2.5", frequency: "monthly", first: { type: "date", date: "2026-12-01" } },
+      }],
+    });
+    const fromStorage = previewPaymentSchedule(parsed, USD, "100.00");
+    expect(fromStorage.ready).toBe(false);
+    expect(fromStorage.issues.map((issue) => issue.message).join(" ")).toContain("whole number from 2 to 120");
+  });
+
+  it("rejects a missing or unsupported standard milestone", () => {
+    const ordinary = previewPaymentSchedule(schedule([
+      row({
+        id: ids(1),
+        label: "advance payment",
+        amount: { type: "percent", percent: "100" },
+        due: { type: "on_event", event: { type: "standard", code: null as never } },
+      }),
+    ]), USD, "100.00");
+    expect(ordinary.ready).toBe(false);
+    expect(ordinary.customerText).toBeNull();
+    expect(ordinary.issues.map((issue) => issue.message).join(" ")).toContain("supported milestone");
+    expect(ordinary.rows[0]?.contractual ?? "").not.toContain("upon .");
+
+    const instalments = previewPaymentSchedule(schedule([
+      row({
+        id: ids(1),
+        amount: { type: "fixed", amount: "100.00" },
+        instalments: {
+          count: 2,
+          frequency: "monthly",
+          first: {
+            type: "after_event",
+            event: { type: "standard", code: "inspection" as "delivery" },
+            offset: 1,
+            unit: "months",
+          },
+        },
+      }),
+    ]), USD, "100.00");
+    expect(instalments.ready).toBe(false);
+    expect(instalments.customerText).toBeNull();
+    expect(instalments.issues.map((issue) => issue.message).join(" ")).toContain("supported milestone");
   });
 
   it("allows an explicit empty schedule only when the PI total is zero", () => {

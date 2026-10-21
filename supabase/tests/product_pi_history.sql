@@ -193,6 +193,7 @@ begin
   );
 
   v_zero := public.create_pi_draft();
+  update public.proforma_invoices set payment_schedule = null where id = v_zero;
   v_payload := v_base || jsonb_build_object(
     'preset_code', 'EG-EGP', 'pi_date', '2026-10-16', 'client_id', v_alpha,
     'lines', jsonb_build_array(jsonb_build_object(
@@ -203,6 +204,7 @@ begin
   perform public.save_pi_draft(v_zero, 1, v_payload);
 
   v_missing := public.create_pi_draft();
+  update public.proforma_invoices set payment_schedule = null where id = v_missing;
   v_payload := v_base || jsonb_build_object(
     'preset_code', 'AE-USD', 'pi_date', '2026-10-17', 'client_id', v_alpha,
     'lines', jsonb_build_array(jsonb_build_object(
@@ -213,6 +215,7 @@ begin
   perform public.save_pi_draft(v_missing, 1, v_payload);
 
   v_eur := public.create_pi_draft();
+  update public.proforma_invoices set payment_schedule = null where id = v_eur;
   v_payload := v_base || jsonb_build_object(
     'preset_code', 'AE-EUR', 'pi_date', '2026-10-18', 'client_id', v_alpha,
     'discount_type', 'percent', 'discount_value', '10',
@@ -240,6 +243,7 @@ begin
   end if;
 
   v_removed := public.create_pi_draft();
+  update public.proforma_invoices set payment_schedule = null where id = v_removed;
   v_payload := v_base || jsonb_build_object(
     'preset_code', 'EG-EGP', 'pi_date', '2026-08-01', 'client_id', v_alpha,
     'lines', jsonb_build_array(jsonb_build_object(
@@ -260,6 +264,7 @@ begin
   update public.proforma_invoices set tracking_status = 'cancelled' where id = v_removed;
 
   v_added := public.create_pi_draft();
+  update public.proforma_invoices set payment_schedule = null where id = v_added;
   v_payload := v_base || jsonb_build_object(
     'preset_code', 'AE-USD', 'pi_date', '2026-07-01', 'client_id', v_beta,
     'lines', jsonb_build_array(jsonb_build_object(
@@ -281,6 +286,7 @@ begin
   insert into public.pi_salespeople (pi_id, user_id) values (v_added, v_seller);
 
   v_lines := public.create_pi_draft();
+  update public.proforma_invoices set payment_schedule = null where id = v_lines;
   v_payload := v_base || jsonb_build_object(
     'preset_code', 'AE-USD', 'pi_date', '2026-10-10', 'client_id', v_alpha,
     'lines', jsonb_build_array(
@@ -322,6 +328,7 @@ begin
   perform set_config('request.jwt.claims', json_build_object('sub', v_sleeper::text, 'role', 'authenticated')::text, true);
   perform set_config('request.jwt.claim.sub', v_sleeper::text, true);
   v_sleeper_pi := public.create_pi_draft();
+  update public.proforma_invoices set payment_schedule = null where id = v_sleeper_pi;
   v_payload := v_base || jsonb_build_object(
     'preset_code', 'EG-EGP', 'pi_date', '2026-05-01', 'client_id', v_delta,
     'lead_salesperson_id', v_sleeper, 'salesperson_ids', jsonb_build_array(v_sleeper),

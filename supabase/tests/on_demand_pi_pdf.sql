@@ -100,6 +100,7 @@ begin
   returning id into v_product_second;
 
   v_pi := public.create_pi_draft();
+  update public.proforma_invoices set payment_schedule = null where id = v_pi;
   select company_name, bank_name, logo_base64
   into v_company, v_bank, v_logo
   from public.company_presets where code = 'EG-EGP';

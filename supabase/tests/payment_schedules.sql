@@ -27,6 +27,7 @@ declare
   v_payload jsonb;
   v_schedule jsonb;
   v_before jsonb;
+  v_legacy uuid;
 begin
   if private.add_calendar_months(date '2026-01-31', 1) <> date '2026-02-28'
     or private.add_calendar_months(date '2024-01-31', 1) <> date '2024-02-29'
@@ -159,6 +160,165 @@ begin
     or v_result ->> 'customer_text' <> '50% upon order confirmation, and 50% (USD 49.99) upon delivery.'
   then
     v_fail := v_fail || 'rounding ' || coalesce(v_result ->> 'customer_text', '') || '; ';
+  end if;
+
+  begin
+    perform private.canonical_payment(jsonb_build_object(
+      'schema_version', 1, 'no_payment_due', false, 'dates_need_review', false,
+      'rows', jsonb_build_array(
+        jsonb_build_object('id', '00000000-0000-4000-8000-000000000101', 'label', '', 'amount', jsonb_build_object('type', 'percent', 'percent', '60'), 'due', jsonb_build_object('type', 'date', 'date', '2026-12-01'), 'instalments', null),
+        jsonb_build_object('id', '00000000-0000-4000-8000-000000000102', 'label', '', 'amount', jsonb_build_object('type', 'percent', 'percent', '50'), 'due', jsonb_build_object('type', 'date', 'date', '2026-12-02'), 'instalments', null)
+      )
+    ), 'USD', 0.02);
+    v_fail := v_fail || '60 plus 50 of 0.02 issued; ';
+  exception when others then
+    if sqlerrm not like '%exactly 100%' then
+      v_fail := v_fail || 'percent total ' || sqlerrm || '; ';
+    end if;
+  end;
+
+  v_result := private.canonical_payment(jsonb_build_object(
+    'schema_version', 1, 'no_payment_due', false, 'dates_need_review', false,
+    'rows', jsonb_build_array(
+      jsonb_build_object('id', '00000000-0000-4000-8000-000000000103', 'label', '', 'amount', jsonb_build_object('type', 'percent', 'percent', '50'), 'due', jsonb_build_object('type', 'date', 'date', '2026-12-01'), 'instalments', null),
+      jsonb_build_object('id', '00000000-0000-4000-8000-000000000104', 'label', '', 'amount', jsonb_build_object('type', 'percent', 'percent', '50'), 'due', jsonb_build_object('type', 'date', 'date', '2026-12-02'), 'instalments', null)
+    )
+  ), 'USD', 0.03);
+  if v_result #>> '{rows,0,amount}' <> '0.02' or v_result #>> '{rows,1,amount}' <> '0.01' then
+    v_fail := v_fail || 'small 100 percent rounding ' || coalesce(v_result #>> '{rows,0,amount}', '') || '/' || coalesce(v_result #>> '{rows,1,amount}', '') || '; ';
+  end if;
+
+  v_result := private.canonical_payment(jsonb_build_object(
+    'schema_version', 1, 'no_payment_due', false, 'dates_need_review', false,
+    'rows', jsonb_build_array(
+      jsonb_build_object('id', '00000000-0000-4000-8000-000000000105', 'label', '', 'amount', jsonb_build_object('type', 'fixed', 'amount', '0.01'), 'due', jsonb_build_object('type', 'date', 'date', '2026-12-01'), 'instalments', null),
+      jsonb_build_object('id', '00000000-0000-4000-8000-000000000106', 'label', '', 'amount', jsonb_build_object('type', 'percent', 'percent', '50'), 'due', jsonb_build_object('type', 'date', 'date', '2026-12-02'), 'instalments', null)
+    )
+  ), 'USD', 0.02);
+  if v_result #>> '{rows,0,amount}' <> '0.01' or v_result #>> '{rows,1,amount}' <> '0.01' then
+    v_fail := v_fail || 'mixed fixed percent ' || coalesce(v_result::text, '') || '; ';
+  end if;
+
+  v_result := private.canonical_payment(jsonb_build_object(
+    'schema_version', 1, 'no_payment_due', false, 'dates_need_review', false,
+    'rows', jsonb_build_array(
+      jsonb_build_object('id', '00000000-0000-4000-8000-000000000107', 'label', '', 'amount', jsonb_build_object('type', 'percent', 'percent', '60'), 'due', jsonb_build_object('type', 'date', 'date', '2026-12-01'), 'instalments', null),
+      jsonb_build_object('id', '00000000-0000-4000-8000-000000000108', 'label', '', 'amount', jsonb_build_object('type', 'remainder'), 'due', jsonb_build_object('type', 'date', 'date', '2026-12-02'), 'instalments', null)
+    )
+  ), 'USD', 0.02);
+  if v_result #>> '{rows,0,amount}' <> '0.01' or v_result #>> '{rows,1,amount}' <> '0.01' then
+    v_fail := v_fail || 'mixed remainder ' || coalesce(v_result::text, '') || '; ';
+  end if;
+
+  begin
+    perform private.sanitize_payment_event(jsonb_build_object('type', 'standard', 'code', null), 'Advance');
+    v_fail := v_fail || 'null standard code saved; ';
+  exception when others then
+    if sqlerrm not like '%supported milestone%' then
+      v_fail := v_fail || 'null code ' || sqlerrm || '; ';
+    end if;
+  end;
+  begin
+    perform private.sanitize_payment_event(jsonb_build_object('type', 'standard'), 'Advance');
+    v_fail := v_fail || 'missing standard code saved; ';
+  exception when others then
+    if sqlerrm not like '%supported milestone%' then
+      v_fail := v_fail || 'missing code ' || sqlerrm || '; ';
+    end if;
+  end;
+  begin
+    perform private.sanitize_payment_event(jsonb_build_object('type', 'standard', 'code', 'inspection'), 'Advance');
+    v_fail := v_fail || 'unsupported standard code saved; ';
+  exception when others then
+    if sqlerrm not like '%supported milestone%' then
+      v_fail := v_fail || 'unsupported code ' || sqlerrm || '; ';
+    end if;
+  end;
+  begin
+    perform private.canonical_payment(jsonb_build_object(
+      'schema_version', 1, 'no_payment_due', false, 'dates_need_review', false,
+      'rows', jsonb_build_array(jsonb_build_object(
+        'id', '00000000-0000-4000-8000-000000000111', 'label', 'advance payment',
+        'amount', jsonb_build_object('type', 'percent', 'percent', '100'),
+        'due', jsonb_build_object('type', 'on_event', 'event', jsonb_build_object('type', 'standard', 'code', null)),
+        'instalments', null
+      ))
+    ), 'USD', 100);
+    v_fail := v_fail || 'null milestone issued; ';
+  exception when others then
+    if sqlerrm not like '%supported milestone%' then
+      v_fail := v_fail || 'null milestone ' || sqlerrm || '; ';
+    end if;
+  end;
+  begin
+    perform private.canonical_payment(jsonb_build_object(
+      'schema_version', 1, 'no_payment_due', false, 'dates_need_review', false,
+      'rows', jsonb_build_array(jsonb_build_object(
+        'id', '00000000-0000-4000-8000-000000000112', 'label', 'Balance',
+        'amount', jsonb_build_object('type', 'fixed', 'amount', '100.00'),
+        'due', jsonb_build_object('type', 'unset'),
+        'instalments', jsonb_build_object(
+          'count', 2, 'frequency', 'monthly',
+          'first', jsonb_build_object('type', 'after_event', 'event', jsonb_build_object('type', 'standard'), 'offset', 1, 'unit', 'months')
+        )
+      ))
+    ), 'USD', 100);
+    v_fail := v_fail || 'instalment milestone issued; ';
+  exception when others then
+    if sqlerrm not like '%supported milestone%' then
+      v_fail := v_fail || 'instalment milestone ' || sqlerrm || '; ';
+    end if;
+  end;
+
+  foreach v_text in array ARRAY['0', '2.5', '-3', '1000000000'] loop
+    begin
+      perform private.canonical_payment(jsonb_build_object(
+        'schema_version', 1, 'no_payment_due', false, 'dates_need_review', false,
+        'rows', jsonb_build_array(jsonb_build_object(
+          'id', '00000000-0000-4000-8000-000000000121', 'label', 'Balance',
+          'amount', jsonb_build_object('type', 'fixed', 'amount', '100.00'),
+          'due', jsonb_build_object('type', 'unset'),
+          'instalments', jsonb_build_object('count', v_text::numeric, 'frequency', 'monthly', 'first', jsonb_build_object('type', 'date', 'date', '2026-12-01'))
+        ))
+      ), 'USD', 100);
+      v_fail := v_fail || 'instalment count ' || v_text || ' issued; ';
+    exception when others then
+      if sqlerrm not like '%whole number from 2 to 120%' or sqlerrm like '%division by zero%' then
+        v_fail := v_fail || 'instalment count ' || v_text || ' ' || sqlerrm || '; ';
+      end if;
+    end;
+  end loop;
+  begin
+    perform private.canonical_payment(jsonb_build_object(
+      'schema_version', 1, 'no_payment_due', false, 'dates_need_review', false,
+      'rows', jsonb_build_array(jsonb_build_object(
+        'id', '00000000-0000-4000-8000-000000000122', 'label', 'Balance',
+        'amount', jsonb_build_object('type', 'fixed', 'amount', '100.00'),
+        'due', jsonb_build_object('type', 'unset'),
+        'instalments', jsonb_build_object('count', null, 'frequency', 'monthly', 'first', jsonb_build_object('type', 'date', 'date', '2026-12-01'))
+      ))
+    ), 'USD', 100);
+    v_fail := v_fail || 'blank instalment count issued; ';
+  exception when others then
+    if sqlerrm not like '%enter the number of instalments%' then
+      v_fail := v_fail || 'blank instalments ' || sqlerrm || '; ';
+    end if;
+  end;
+  v_result := private.payment_expand_instalments(
+    '00000000-0000-4000-8000-000000000123', 100,
+    jsonb_build_object('count', 0, 'frequency', 'monthly', 'first', jsonb_build_object('type', 'date', 'date', '2026-12-01')),
+    'USD'
+  );
+  if coalesce(v_result ->> 'error', '') not like '%whole number from 2 to 120%' then
+    v_fail := v_fail || 'expand zero ' || coalesce(v_result::text, 'null') || '; ';
+  end if;
+  v_result := private.payment_expand_instalments(
+    '00000000-0000-4000-8000-000000000123', 100,
+    jsonb_build_object('count', 1000000000, 'frequency', 'monthly', 'first', jsonb_build_object('type', 'date', 'date', '2026-12-01')),
+    'USD'
+  );
+  if coalesce(v_result ->> 'error', '') not like '%whole number from 2 to 120%' then
+    v_fail := v_fail || 'expand excessive ' || coalesce(v_result::text, 'null') || '; ';
   end if;
 
   v_result := private.canonical_payment(jsonb_build_object(
@@ -307,6 +467,73 @@ begin
     or (select draft_version from public.proforma_invoices where id = v_pi) <> v_expected
   then
     v_fail := v_fail || 'failed save partially updated the schedule; ';
+  end if;
+
+  begin
+    perform public.save_pi_draft(v_pi, v_expected, v_payload || jsonb_build_object('payment_schedule', 'null'::jsonb, 'payment_terms', '100% in advance'));
+    v_fail := v_fail || 'structured draft accepted a legacy downgrade; ';
+  exception when others then
+    if sqlerrm not like '%cannot be replaced%' then
+      v_fail := v_fail || 'downgrade save ' || sqlerrm || '; ';
+    end if;
+  end;
+  if (select payment_schedule from public.proforma_invoices where id = v_pi) is distinct from v_before
+    or (select draft_version from public.proforma_invoices where id = v_pi) <> v_expected
+  then
+    v_fail := v_fail || 'downgrade save changed the schedule; ';
+  end if;
+
+  begin
+    perform public.generate_pi(v_pi, v_expected, v_payload || jsonb_build_object('payment_schedule', 'null'::jsonb, 'payment_terms', '100% in advance'));
+    v_fail := v_fail || 'generate downgraded a structured draft; ';
+  exception when others then
+    if sqlerrm not like '%cannot be replaced%' then
+      v_fail := v_fail || 'downgrade generate ' || sqlerrm || '; ';
+    end if;
+  end;
+  if (select draft_open from public.proforma_invoices where id = v_pi) is distinct from true
+    or (select count(*) from public.pi_versions where pi_id = v_pi) <> 0
+    or (select payment_schedule from public.proforma_invoices where id = v_pi) is distinct from v_before
+  then
+    v_fail := v_fail || 'downgrade generate issued or cleared the schedule; ';
+  end if;
+
+  begin
+    perform public.save_pi_draft(v_pi, v_expected, v_payload - 'payment_schedule');
+    v_fail := v_fail || 'old session saved over a structured draft; ';
+  exception when others then
+    if sqlerrm not like '%open the PI again%' then
+      v_fail := v_fail || 'old session ' || sqlerrm || '; ';
+    end if;
+  end;
+  if (select payment_schedule from public.proforma_invoices where id = v_pi) is distinct from v_before then
+    v_fail := v_fail || 'old session changed the schedule; ';
+  end if;
+
+  v_legacy := public.create_pi_draft();
+  update public.proforma_invoices
+  set payment_schedule = null, payment_terms = '100% in advance'
+  where id = v_legacy;
+  perform public.save_pi_draft(
+    v_legacy,
+    1,
+    (v_payload - 'payment_schedule') || jsonb_build_object('payment_terms', 'Net 30 days')
+  );
+  if (select payment_schedule from public.proforma_invoices where id = v_legacy) is not null
+    or (select payment_terms from public.proforma_invoices where id = v_legacy) <> 'Net 30 days'
+  then
+    v_fail := v_fail || 'legacy omit did not keep the paragraph; ';
+  end if;
+  v_result := public.generate_pi(
+    v_legacy,
+    2,
+    v_payload || jsonb_build_object('payment_schedule', 'null'::jsonb, 'payment_terms', 'Net 30 days')
+  );
+  if v_result #>> '{snapshot,layout_version}' <> 'egypt-v1'
+    or v_result -> 'snapshot' ? 'payment'
+    or v_result #>> '{snapshot,terms,payment_terms}' <> 'Net 30 days'
+  then
+    v_fail := v_fail || 'legacy issue ' || coalesce(v_result #>> '{snapshot,layout_version}', '') || '; ';
   end if;
 
   v_schedule := jsonb_build_object(
