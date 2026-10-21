@@ -22,6 +22,9 @@ Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 
 const YEAR_WORDS = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten"];
 
+export const NO_ONE_TIME_AMOUNT_MESSAGE =
+  "This PI has no one-time amount. Remove those payment rows. The subscription charge is payable 100% in advance and cannot be split into instalments.";
+
 export type PortionLine = {
   position: number;
   billingType: BillingType;
@@ -455,7 +458,7 @@ export function previewAllocatedPayment(input: {
     if (input.schedule.rows.length > 0) {
       return emptyAllocated(hasSubscription, allocation, explanation, [{
         rowId: null,
-        message: "This PI has no one-time amount. Remove those payment rows. The subscription charge is payable 100% in advance and cannot be split into instalments.",
+        message: NO_ONE_TIME_AMOUNT_MESSAGE,
       }]);
     }
     const text = subscriptionTotal.gt(0)

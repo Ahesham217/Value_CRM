@@ -544,6 +544,155 @@ begin
     end if;
   end;
 
+  declare
+    v_ob_a uuid := 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    v_ob_b uuid := 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    v_ob_copy_a text;
+    v_ob_copy_b text;
+    v_version_count integer;
+  begin
+    v_pi := public.create_pi_draft();
+    perform public.save_pi_draft(v_pi, 1, jsonb_build_object(
+      'preset_code', 'AE-USD', 'pi_date', '2026-10-21', 'expiry_date', '2026-11-21',
+      'client_id', v_client, 'bill_to', 'Sub billing', 'ship_same_as_billing', true,
+      'lead_salesperson_id', v_manager, 'salesperson_ids', jsonb_build_array(v_manager),
+      'discount_type', 'none',
+      'payment_schedule', jsonb_build_object('schema_version', 2, 'no_payment_due', false, 'dates_need_review', false, 'residual_target', null, 'rows', '[]'::jsonb),
+      'lines', jsonb_build_array(
+        jsonb_build_object('product_id', v_plan, 'vendor_id', v_vendor, 'model_code', v_model_plan, 'description', 'Plan A', 'unit', 'license', 'quantity', '1', 'unit_price', '1950.00', 'subscription', jsonb_build_object('option_id', v_three, 'obligation_id', v_ob_a, 'negotiated_first_year_unit_price', '1950.00', 'later_year_base_unit_price', '1950.00')),
+        jsonb_build_object('product_id', v_plan, 'vendor_id', v_vendor, 'model_code', v_model_plan, 'description', 'Plan B', 'unit', 'license', 'quantity', '1', 'unit_price', '2200.00', 'subscription', jsonb_build_object('option_id', v_one, 'obligation_id', v_ob_b, 'negotiated_first_year_unit_price', '2200.00', 'later_year_base_unit_price', null))
+      )
+    ));
+    if (select count(*) from public.pi_lines where pi_id = v_pi) <> 2
+      or (select subscription_agreement ->> 'obligation_id' from public.pi_lines where pi_id = v_pi and description = 'Plan A') <> v_ob_a::text
+      or (select subscription_agreement ->> 'obligation_id' from public.pi_lines where pi_id = v_pi and description = 'Plan B') <> v_ob_b::text
+    then
+      v_fail := v_fail || 'two lines of the same product were not saved with distinct obligations; ';
+    end if;
+    v_expected := (select draft_version from public.proforma_invoices where id = v_pi);
+    v_before := (select jsonb_agg(jsonb_build_object('position', position, 'obligation_id', subscription_agreement ->> 'obligation_id') order by position) from public.pi_lines where pi_id = v_pi);
+    begin
+      perform public.save_pi_draft(v_pi, v_expected, jsonb_build_object(
+        'preset_code', 'AE-USD', 'pi_date', '2026-10-21', 'expiry_date', '2026-11-21',
+        'client_id', v_client, 'bill_to', 'Sub billing', 'ship_same_as_billing', true,
+        'lead_salesperson_id', v_manager, 'salesperson_ids', jsonb_build_array(v_manager),
+        'discount_type', 'none',
+        'payment_schedule', jsonb_build_object('schema_version', 2, 'no_payment_due', false, 'dates_need_review', false, 'residual_target', null, 'rows', '[]'::jsonb),
+        'lines', jsonb_build_array(
+          jsonb_build_object('product_id', v_plan, 'vendor_id', v_vendor, 'model_code', v_model_plan, 'description', 'Plan A', 'unit', 'license', 'quantity', '1', 'unit_price', '1950.00', 'subscription', jsonb_build_object('option_id', v_three, 'obligation_id', v_ob_a, 'negotiated_first_year_unit_price', '1950.00', 'later_year_base_unit_price', '1950.00')),
+          jsonb_build_object('product_id', v_plan, 'vendor_id', v_vendor, 'model_code', v_model_plan, 'description', 'Plan B', 'unit', 'license', 'quantity', '1', 'unit_price', '2200.00', 'subscription', jsonb_build_object('option_id', v_one, 'obligation_id', v_ob_a, 'negotiated_first_year_unit_price', '2200.00', 'later_year_base_unit_price', null))
+        )
+      ));
+      v_fail := v_fail || 'duplicate obligation was saved; ';
+    exception when others then
+      if sqlerrm not like '%own obligation identifier%' then
+        v_fail := v_fail || 'duplicate obligation ' || sqlerrm || '; ';
+      end if;
+    end;
+    if (select draft_version from public.proforma_invoices where id = v_pi) <> v_expected
+      or (select jsonb_agg(jsonb_build_object('position', position, 'obligation_id', subscription_agreement ->> 'obligation_id') order by position) from public.pi_lines where pi_id = v_pi) is distinct from v_before
+    then
+      v_fail := v_fail || 'duplicate obligation save changed the draft; ';
+    end if;
+
+    perform public.save_pi_draft(v_pi, v_expected, jsonb_build_object(
+      'preset_code', 'AE-USD', 'pi_date', '2026-10-21', 'expiry_date', '2026-11-21',
+      'client_id', v_client, 'bill_to', 'Sub billing', 'ship_same_as_billing', true,
+      'lead_salesperson_id', v_manager, 'salesperson_ids', jsonb_build_array(v_manager),
+      'discount_type', 'none',
+      'payment_schedule', jsonb_build_object('schema_version', 2, 'no_payment_due', false, 'dates_need_review', false, 'residual_target', null, 'rows', '[]'::jsonb),
+      'lines', jsonb_build_array(
+        jsonb_build_object('product_id', v_plan, 'vendor_id', v_vendor, 'model_code', v_model_plan, 'description', 'Plan B', 'unit', 'license', 'quantity', '1', 'unit_price', '2200.00', 'subscription', jsonb_build_object('option_id', v_one, 'obligation_id', v_ob_b, 'negotiated_first_year_unit_price', '2200.00', 'later_year_base_unit_price', null)),
+        jsonb_build_object('product_id', v_plan, 'vendor_id', v_vendor, 'model_code', v_model_plan, 'description', 'Plan A', 'unit', 'license', 'quantity', '1', 'unit_price', '1950.00', 'subscription', jsonb_build_object('option_id', v_three, 'obligation_id', v_ob_a, 'negotiated_first_year_unit_price', '1950.00', 'later_year_base_unit_price', '1950.00'))
+      )
+    ));
+    if (select subscription_agreement ->> 'obligation_id' from public.pi_lines where pi_id = v_pi and position = 1) <> v_ob_b::text
+      or (select subscription_agreement ->> 'obligation_id' from public.pi_lines where pi_id = v_pi and position = 2) <> v_ob_a::text
+    then
+      v_fail := v_fail || 'reordering did not keep each obligation; ';
+    end if;
+
+    v_result := public.generate_pi(v_pi, (select draft_version from public.proforma_invoices where id = v_pi), jsonb_build_object(
+      'preset_code', 'AE-USD', 'pi_date', '2026-10-21', 'expiry_date', '2026-11-21',
+      'client_id', v_client, 'bill_to', 'Sub billing', 'ship_same_as_billing', true,
+      'lead_salesperson_id', v_manager, 'salesperson_ids', jsonb_build_array(v_manager),
+      'discount_type', 'none',
+      'payment_schedule', jsonb_build_object('schema_version', 2, 'no_payment_due', false, 'dates_need_review', false, 'residual_target', null, 'rows', '[]'::jsonb),
+      'lines', jsonb_build_array(
+        jsonb_build_object('product_id', v_plan, 'vendor_id', v_vendor, 'model_code', v_model_plan, 'description', 'Plan B', 'unit', 'license', 'quantity', '1', 'unit_price', '2200.00', 'subscription', jsonb_build_object('option_id', v_one, 'obligation_id', v_ob_b, 'negotiated_first_year_unit_price', '2200.00', 'later_year_base_unit_price', null)),
+        jsonb_build_object('product_id', v_plan, 'vendor_id', v_vendor, 'model_code', v_model_plan, 'description', 'Plan A', 'unit', 'license', 'quantity', '1', 'unit_price', '1950.00', 'subscription', jsonb_build_object('option_id', v_three, 'obligation_id', v_ob_a, 'negotiated_first_year_unit_price', '1950.00', 'later_year_base_unit_price', '1950.00'))
+      )
+    ));
+    v_original := v_result -> 'snapshot';
+    perform public.create_pi_revision(v_pi);
+    if (select subscription_agreement ->> 'obligation_id' from public.pi_lines where pi_id = v_pi and position = 1) <> v_ob_b::text
+      or (select subscription_agreement ->> 'obligation_id' from public.pi_lines where pi_id = v_pi and position = 2) <> v_ob_a::text
+    then
+      v_fail := v_fail || 'revision draft lost obligation identity; ';
+    end if;
+    v_result := public.generate_pi(v_pi, (select draft_version from public.proforma_invoices where id = v_pi), jsonb_build_object(
+      'preset_code', 'AE-USD', 'pi_date', '2026-10-21', 'expiry_date', '2026-11-21',
+      'client_id', v_client, 'bill_to', 'Sub billing', 'ship_same_as_billing', true,
+      'lead_salesperson_id', v_manager, 'salesperson_ids', jsonb_build_array(v_manager),
+      'discount_type', 'none',
+      'payment_schedule', jsonb_build_object('schema_version', 2, 'no_payment_due', false, 'dates_need_review', false, 'residual_target', null, 'rows', '[]'::jsonb),
+      'lines', jsonb_build_array(
+        jsonb_build_object('product_id', v_plan, 'vendor_id', v_vendor, 'model_code', v_model_plan, 'description', 'Plan B', 'unit', 'license', 'quantity', '1', 'unit_price', '2100.00', 'subscription', jsonb_build_object('option_id', v_one, 'obligation_id', v_ob_b, 'negotiated_first_year_unit_price', '2100.00', 'later_year_base_unit_price', null)),
+        jsonb_build_object('product_id', v_plan, 'vendor_id', v_vendor, 'model_code', v_model_plan, 'description', 'Plan A', 'unit', 'license', 'quantity', '1', 'unit_price', '1800.00', 'subscription', jsonb_build_object('option_id', v_three, 'obligation_id', v_ob_a, 'negotiated_first_year_unit_price', '1800.00', 'later_year_base_unit_price', '1950.00'))
+      )
+    ));
+    if v_result #>> '{snapshot,lines,0,subscription,obligation_id}' <> v_ob_b::text
+      or v_result #>> '{snapshot,lines,1,subscription,obligation_id}' <> v_ob_a::text
+      or (select snapshot from public.pi_versions where pi_id = v_pi and revision = 0) is distinct from v_original
+    then
+      v_fail := v_fail || 'revision did not preserve obligation identity; ';
+    end if;
+
+    v_duplicate := public.duplicate_pi(v_pi);
+    select subscription_agreement ->> 'obligation_id' into v_ob_copy_a from public.pi_lines where pi_id = v_duplicate and position = 1;
+    select subscription_agreement ->> 'obligation_id' into v_ob_copy_b from public.pi_lines where pi_id = v_duplicate and position = 2;
+    if v_ob_copy_a is null or v_ob_copy_b is null
+      or v_ob_copy_a = v_ob_copy_b
+      or v_ob_copy_a in (v_ob_a::text, v_ob_b::text)
+      or v_ob_copy_b in (v_ob_a::text, v_ob_b::text)
+    then
+      v_fail := v_fail || 'duplicate PI did not create fresh obligation identifiers; ';
+    end if;
+
+    update public.pi_lines
+    set subscription_agreement = jsonb_set(subscription_agreement, '{obligation_id}', to_jsonb(v_ob_copy_a))
+    where pi_id = v_duplicate and position = 2;
+    begin
+      perform private.assert_pi_ready(v_duplicate);
+      v_fail := v_fail || 'issue allowed a duplicate obligation; ';
+    exception when others then
+      if sqlerrm not like '%own obligation identifier%' then
+        v_fail := v_fail || 'issue duplicate ' || sqlerrm || '; ';
+      end if;
+    end;
+    select count(*) into v_version_count from public.pi_versions where pi_id = v_duplicate;
+    update public.profiles set can_edit_drafts = false where id = v_manager;
+    begin
+      perform public.generate_pi(v_duplicate, (select draft_version from public.proforma_invoices where id = v_duplicate), jsonb_build_object(
+        'preset_code', 'AE-USD', 'pi_date', '2026-10-21', 'expiry_date', '2026-11-21',
+        'client_id', v_client, 'bill_to', 'Sub billing', 'ship_same_as_billing', true,
+        'lead_salesperson_id', v_manager, 'salesperson_ids', jsonb_build_array(v_manager),
+        'discount_type', 'none',
+        'payment_schedule', jsonb_build_object('schema_version', 2, 'no_payment_due', false, 'dates_need_review', false, 'residual_target', null, 'rows', '[]'::jsonb),
+        'lines', '[]'::jsonb
+      ));
+      v_fail := v_fail || 'generate issued a duplicate obligation; ';
+    exception when others then
+      if sqlerrm not like '%own obligation identifier%' then
+        v_fail := v_fail || 'generate duplicate ' || sqlerrm || '; ';
+      end if;
+    end;
+    update public.profiles set can_edit_drafts = true where id = v_manager;
+    if (select count(*) from public.pi_versions where pi_id = v_duplicate) <> v_version_count then
+      v_fail := v_fail || 'rejected issue created a version; ';
+    end if;
+  end;
+
   if v_fail <> '' then
     raise exception 'SUBSCRIPTION_FAIL %', v_fail;
   end if;

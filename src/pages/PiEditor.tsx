@@ -963,6 +963,7 @@ export function PiEditorPage() {
                 setPaymentSchedule(convertScheduleToAllocation(paymentMode === "legacy" ? null : paymentSchedule));
               }}
               residualRequired={allocatedPreview?.allocation?.residualRequired ?? false}
+              allocationIssues={paymentSchedule.schema_version === 2 ? (allocatedPreview?.issues ?? null) : null}
               canEdit={canEdit}
               showLegacyCancel={loadedLegacy}
               onLegacyText={setPaymentTerms}

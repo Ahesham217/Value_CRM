@@ -16,6 +16,8 @@ import {
   type PaymentSchedule,
   type StandardEventCode,
 } from "../lib/payment-schedule";
+import { NO_ONE_TIME_AMOUNT_MESSAGE } from "../lib/subscription";
+import type { ScheduleIssue } from "../lib/payment-schedule";
 import type { CurrencyCode } from "../lib/types";
 
 const EVENTS: { code: StandardEventCode; label: string }[] = [
@@ -38,6 +40,7 @@ export function PaymentScheduleSection({
   conversionMessage = null,
   onConvert,
   residualRequired = false,
+  allocationIssues = null,
   canEdit,
   showLegacyCancel,
   onLegacyText,
@@ -57,6 +60,8 @@ export function PaymentScheduleSection({
   conversionMessage?: string | null;
   onConvert?: () => void;
   residualRequired?: boolean;
+  /** Schema version 2 issues from the allocation preview. Null when that preview has not been run. */
+  allocationIssues?: ScheduleIssue[] | null;
   canEdit: boolean;
   showLegacyCancel: boolean;
   onLegacyText: (value: string) => void;
@@ -86,22 +91,36 @@ export function PaymentScheduleSection({
   }
 
   const usingAllocation = schedule.schema_version === 2 && percentageOf === "one_time";
+  const subscriptionCoversTotal = usingAllocation
+    && percentageBase === "0.00"
+    && grandTotal != null
+    && grandTotal !== "0.00";
   const previewInput = usingAllocation ? { ...schedule, schema_version: 1 as const } : schedule;
-  const rawPreview = previewPaymentSchedule(
-    previewInput,
-    currency,
-    usingAllocation ? percentageBase : grandTotal,
-    usingAllocation ? { base: "one_time" } : undefined,
-  );
-  const preview = usingAllocation
-    ? {
-      ...rawPreview,
-      issues: rawPreview.issues.map((issue) => ({
-        ...issue,
-        message: issue.message.replaceAll("grand total", "one-time amount").replaceAll("Grand total", "One-time amount"),
-      })),
-    }
-    : rawPreview;
+  const rawPreview = subscriptionCoversTotal
+    ? null
+    : previewPaymentSchedule(
+      previewInput,
+      currency,
+      usingAllocation ? percentageBase : grandTotal,
+      usingAllocation ? { base: "one_time" } : undefined,
+    );
+  const preview = rawPreview == null
+    ? null
+    : usingAllocation
+      ? {
+        ...rawPreview,
+        issues: rawPreview.issues.map((issue) => ({
+          ...issue,
+          message: issue.message.replaceAll("grand total", "one-time amount").replaceAll("Grand total", "One-time amount"),
+        })),
+      }
+      : rawPreview;
+  const issues: ScheduleIssue[] = usingAllocation && allocationIssues != null
+    ? allocationIssues
+    : subscriptionCoversTotal
+      ? (schedule.rows.length > 0 ? [{ rowId: null, message: NO_ONE_TIME_AMOUNT_MESSAGE }] : [])
+      : (preview?.issues ?? []);
+  const summaryText = customerText ?? preview?.customerText ?? null;
   const remainderUsed = schedule.rows.some((row) => row.amount.type === "remainder");
   const update = (next: PaymentSchedule) => onSchedule({
     ...next,
@@ -132,8 +151,8 @@ export function PaymentScheduleSection({
     <div>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="text-[15px] font-semibold text-ink">Payment schedule</h3>
-        {preview.customerText ? (
-          <p className="text-sm text-slate-600">{preview.customerText}</p>
+        {summaryText ? (
+          <p className="text-sm text-slate-600">{summaryText}</p>
         ) : (
           <p className="text-sm text-slate-600">
             {schedule.rows.length === 0 ? "No payments yet." : `${schedule.rows.length} ${schedule.rows.length === 1 ? "payment" : "payments"}`}
@@ -172,7 +191,7 @@ export function PaymentScheduleSection({
           </Banner>
         </div>
       ) : null}
-      {grandTotal === "0.00" || schedule.no_payment_due ? (
+      {!subscriptionCoversTotal && (grandTotal === "0.00" || schedule.no_payment_due) ? (
         <div className="mt-3">
           {schedule.no_payment_due ? (
             <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -203,7 +222,7 @@ export function PaymentScheduleSection({
       {!schedule.no_payment_due ? (
         <div className="mt-3 space-y-3">
           {schedule.rows.map((row, index) => {
-            const rowPreview = preview.rows.find((item) => item.id === row.id);
+            const rowPreview = preview?.rows.find((item) => item.id === row.id);
             return (
               <PaymentRowEditor
                 key={row.id}
@@ -235,7 +254,7 @@ export function PaymentScheduleSection({
           ) : null}
         </div>
       ) : null}
-      {preview.allocated && (usingAllocation ? percentageBase : grandTotal) ? (
+      {preview?.allocated && (usingAllocation ? percentageBase : grandTotal) ? (
         <p className="mt-3 text-sm tabular-nums text-ink">
           Allocated {formatMoney(preview.allocated, currency)} of {formatMoney(usingAllocation ? percentageBase : grandTotal, currency)}
           {usingAllocation ? " of the one-time amount" : ""}
@@ -243,15 +262,15 @@ export function PaymentScheduleSection({
           {preview.overallocated ? ` · Over-allocated by ${formatMoney(preview.overallocated, currency)}` : ""}
         </p>
       ) : null}
-      {preview.issues.length > 0 ? (
+      {issues.length > 0 ? (
         <ul className="mt-2 space-y-1 text-sm text-red-800">
-          {preview.issues.map((issue) => <li key={`${issue.rowId ?? "schedule"}-${issue.message}`}>{issue.message}</li>)}
+          {issues.map((issue) => <li key={`${issue.rowId ?? "schedule"}-${issue.message}`}>{issue.message}</li>)}
         </ul>
       ) : null}
       <div className="mt-3 rounded-md border border-line bg-canvas px-3 py-2">
         <p className="text-xs font-medium text-muted">Customer payment terms</p>
         <p className="mt-1 text-sm text-ink">
-          {customerText ?? preview.customerText ?? "The payment terms appear here when the schedule is complete. They are generated from the schedule and are not edited separately."}
+          {summaryText ?? "The payment terms appear here when the schedule is complete. They are generated from the schedule and are not edited separately."}
         </p>
       </div>
       {showLegacyCancel && canEdit ? (

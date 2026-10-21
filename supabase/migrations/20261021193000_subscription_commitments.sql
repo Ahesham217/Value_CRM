@@ -1005,6 +1005,7 @@ declare
   v_mentions boolean := false;
   v_has_subscription boolean := false;
   v_price_to_save numeric;
+  v_seen_obligations text[] := '{}';
 begin
   if not private.is_active_member() then
     raise exception 'Your account is disabled or you are not signed in.';
@@ -1238,6 +1239,12 @@ begin
         when v_agreement is null then v_price
         else (v_agreement ->> 'negotiated_first_year_unit_price')::numeric
       end;
+      if v_agreement is not null and nullif(v_agreement ->> 'obligation_id', '') is not null then
+        if lower(v_agreement ->> 'obligation_id') = any(v_seen_obligations) then
+          raise exception 'Each subscription line needs its own obligation identifier. Another line on this PI already uses it, so nothing was saved.';
+        end if;
+        v_seen_obligations := array_append(v_seen_obligations, lower(v_agreement ->> 'obligation_id'));
+      end if;
 
       insert into public.pi_lines (
         pi_id, position, product_id, vendor_id, vendor_name, model_code, description, unit, quantity, unit_price, subscription_agreement
@@ -1378,6 +1385,17 @@ begin
       )
   ) then
     raise exception 'Select a current commitment for every subscription, priced in this PI currency, before generating. Saved terms are not replaced from the catalogue.';
+  end if;
+  if exists (
+    select 1
+    from public.pi_lines
+    where pi_id = p_id
+      and subscription_agreement is not null
+      and nullif(subscription_agreement ->> 'obligation_id', '') is not null
+    group by lower(subscription_agreement ->> 'obligation_id')
+    having count(*) > 1
+  ) then
+    raise exception 'Each subscription line needs its own obligation identifier.';
   end if;
   if exists (
     select 1
