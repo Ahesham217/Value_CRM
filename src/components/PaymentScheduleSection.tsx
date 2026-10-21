@@ -27,6 +27,11 @@ const EVENTS: { code: StandardEventCode; label: string }[] = [
   { code: "commissioning", label: "Commissioning" },
 ];
 
+/** Turn off an existing no-payment mark without replacing rows, dates, or schema version. */
+export function recoverPaymentSchedule(schedule: PaymentSchedule): PaymentSchedule {
+  return { ...schedule, no_payment_due: false };
+}
+
 export function PaymentScheduleSection({
   mode,
   legacyText,
@@ -191,22 +196,23 @@ export function PaymentScheduleSection({
           </Banner>
         </div>
       ) : null}
-      {!subscriptionCoversTotal && (grandTotal === "0.00" || schedule.no_payment_due) ? (
+      {schedule.no_payment_due ? (
         <div className="mt-3">
-          {schedule.no_payment_due ? (
-            <div className="flex flex-wrap items-center gap-3 text-sm">
-              <p>No payment due. This is only valid when the PI total is zero.</p>
-              {canEdit ? (
-                <button type="button" className="text-primary underline" onClick={() => update({ ...schedule, no_payment_due: false })}>
-                  Use a payment schedule
-                </button>
-              ) : null}
-            </div>
-          ) : canEdit ? (
-            <Button type="button" variant="secondary" onClick={() => update({ ...emptyPaymentSchedule(), no_payment_due: true })}>
-              No payment due
-            </Button>
-          ) : null}
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            <p>No payment due. This is only valid when the PI total is zero.</p>
+            {canEdit ? (
+              <button type="button" className="text-primary underline" onClick={() => onSchedule(recoverPaymentSchedule(schedule))}>
+                Use a payment schedule
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+      {!schedule.no_payment_due && grandTotal === "0.00" && canEdit ? (
+        <div className="mt-3">
+          <Button type="button" variant="secondary" onClick={() => update({ ...emptyPaymentSchedule(), no_payment_due: true })}>
+            No payment due
+          </Button>
         </div>
       ) : null}
       {oneTimeIsZero ? (

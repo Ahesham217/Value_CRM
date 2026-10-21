@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { advanceThenShipmentTemplate } from "../lib/payment-schedule";
 import { NO_ONE_TIME_AMOUNT_MESSAGE, previewAllocatedPayment } from "../lib/subscription";
 import type { PaymentSchedule } from "../lib/payment-schedule";
-import { PaymentScheduleSection } from "./PaymentScheduleSection";
+import { PaymentScheduleSection, recoverPaymentSchedule } from "./PaymentScheduleSection";
 
 const ZERO_TOTAL = "This PI total is zero. Mark the schedule as no payment due, or change the PI total.";
 
@@ -140,5 +140,49 @@ describe("payment section allocation output", () => {
     expect(html).toContain(ZERO_TOTAL);
     expect(html).toContain("No payment due");
     expect(allocated.ready).toBe(false);
+  });
+
+  it("keeps a way to turn off no payment due after a zero subscription draft becomes positive", () => {
+    const schedule: PaymentSchedule = {
+      schema_version: 2,
+      no_payment_due: true,
+      dates_need_review: true,
+      residual_target: "subscription",
+      rows: [{
+        id: "kept-row",
+        label: "advance payment",
+        amount: { type: "percent", percent: "100" },
+        due: { type: "on_event", event: { type: "standard", code: "order_confirmation" } },
+        instalments: null,
+      }],
+    };
+    const zeroHtml = markup({
+      schedule,
+      grandTotal: "0.00",
+      percentageBase: "0.00",
+      customerText: "No payment due.",
+    });
+    expect(zeroHtml).toContain("Use a payment schedule");
+
+    const updates: PaymentSchedule[] = [];
+    const positiveHtml = markup({
+      schedule,
+      grandTotal: "1950.00",
+      percentageBase: "0.00",
+      customerText: null,
+      allocationIssues: [{ rowId: null, message: "No payment due does not match the grand total. The PI total is not zero." }],
+      onSchedule: (next) => { updates.push(next); },
+    });
+    expect(positiveHtml).toContain("Use a payment schedule");
+    expect(positiveHtml).toContain("No payment due does not match the grand total. The PI total is not zero.");
+    expect(positiveHtml).not.toMatch(/>No payment due</);
+
+    updates.push(recoverPaymentSchedule(schedule));
+    expect(updates).toEqual([{ ...schedule, no_payment_due: false }]);
+    expect(updates[0]?.rows).toBe(schedule.rows);
+    expect(updates[0]?.rows[0]?.id).toBe("kept-row");
+    expect(updates[0]?.dates_need_review).toBe(true);
+    expect(updates[0]?.residual_target).toBe("subscription");
+    expect(updates[0]?.schema_version).toBe(2);
   });
 });
