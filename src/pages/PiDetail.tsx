@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
+import { PaymentTrackingSection } from "../components/PaymentTrackingSection";
 import { Banner, Button, Disclosure, Menu, Select, StatusBadge, buttonClass } from "../components/ui";
 import { downloadIssuedPdf } from "../lib/documents";
 import { errorText } from "../lib/errors";
@@ -266,6 +267,13 @@ export function PiDetailPage() {
           {exclusionNotes.map((note) => <p key={note} className="mt-1 text-xs text-slate-600">{note}</p>)}
         </div>
       </section>
+      <PaymentTrackingSection
+        piId={pi.id}
+        versions={versions}
+        canManage={can(profile, "can_manage_payments")}
+        canReverse={can(profile, "can_reverse_payments")}
+        canWaive={can(profile, "can_activate_zero_subscriptions")}
+      />
       <section className="rounded-[10px] border border-line bg-white">
         <div className="border-b border-line px-6 py-4">
           <h2 className="text-[15px] font-semibold text-ink">{pi.draft_open && versions.length > 0 ? "Draft items" : "Items"}</h2>

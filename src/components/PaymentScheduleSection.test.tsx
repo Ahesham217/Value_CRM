@@ -50,6 +50,8 @@ describe("payment section allocation output", () => {
     });
     expect(html).toContain(customerText);
     expect(html).toContain("payable 100% in advance");
+    expect(html).toContain("A separate 100% payment row is not required.");
+    expect(html).not.toContain("100% on confirmation");
     expect(html).not.toContain(ZERO_TOTAL);
     expect(html).not.toContain("No payment due");
   });
@@ -184,5 +186,26 @@ describe("payment section allocation output", () => {
     expect(updates[0]?.dates_need_review).toBe(true);
     expect(updates[0]?.residual_target).toBe("subscription");
     expect(updates[0]?.schema_version).toBe(2);
+  });
+
+  it("names the rows a confirmed allocation update will remove", () => {
+    const schedule: PaymentSchedule = {
+      ...advanceThenShipmentTemplate(),
+      schema_version: 1,
+    };
+    const html = markup({
+      schedule,
+      grandTotal: "1950.00",
+      percentageOf: "grand_total",
+      percentageBase: null,
+      conversionMessage: "The current subscription charge is payable 100% in advance.",
+      conversionRemoveLabels: ["advance payment", "before shipment"],
+      conversionConfirmLabel: "Confirm removal and update allocation",
+      onConvert: () => undefined,
+    });
+    expect(html).toContain("Rows that will be removed: advance payment, before shipment.");
+    expect(html).toContain("Confirm removal and update allocation");
+    expect(html).not.toContain("100% on confirmation");
+    expect(html).not.toContain(ZERO_TOTAL);
   });
 });

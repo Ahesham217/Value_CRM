@@ -1,14 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { calculateDocument } from "./money";
 import { advanceThenShipmentTemplate, previewPaymentSchedule } from "./payment-schedule";
+import { emptyPaymentSchedule, fullAdvanceTemplate } from "./payment-schedule";
 import {
+  adjustScheduleForSubscriptionSelection,
   allocateCurrentPortions,
+  applySubscriptionConversion,
   apportionMoney,
   catalogueDriftMessage,
   commitmentCustomerText,
   convertScheduleToAllocation,
   negotiationNote,
   previewAllocatedPayment,
+  subscriptionConversionPlan,
 } from "./subscription";
 import type { PortionLine } from "./subscription";
 import Decimal from "decimal.js";
@@ -377,5 +381,52 @@ describe("catalogue drift", () => {
       savedCurrency: "USD",
       option: null,
     })).toMatch(/could not be found/);
+  });
+});
+
+describe("subscription-only payment allocation", () => {
+  it("prepares an empty schedule when a subscription is selected and does not remove rows by itself", () => {
+    const empty = emptyPaymentSchedule();
+    const prepared = adjustScheduleForSubscriptionSelection({
+      mode: "structured",
+      schedule: empty,
+      hadSubscription: false,
+      hasSubscription: true,
+    });
+    expect(prepared?.schema_version).toBe(2);
+    expect(prepared?.rows).toEqual([]);
+    expect(empty.schema_version).toBe(1);
+
+    const entered = fullAdvanceTemplate();
+    expect(adjustScheduleForSubscriptionSelection({
+      mode: "structured",
+      schedule: entered,
+      hadSubscription: false,
+      hasSubscription: true,
+    })).toBeNull();
+    const plan = subscriptionConversionPlan({
+      mode: "structured",
+      schedule: entered,
+      hasSubscription: true,
+      subscriptionOnly: true,
+    });
+    expect(plan?.removeLabels).toEqual(["advance payment"]);
+    expect(plan?.confirmLabel).toMatch(/removal/);
+    expect(applySubscriptionConversion(entered, true).rows).toEqual([]);
+    expect(entered.rows).toHaveLength(1);
+  });
+
+  it("keeps one-time rows on a mixed PI until the allocation is confirmed", () => {
+    const entered = fullAdvanceTemplate();
+    const plan = subscriptionConversionPlan({
+      mode: "structured",
+      schedule: entered,
+      hasSubscription: true,
+      subscriptionOnly: false,
+    });
+    expect(plan?.retainLabels).toEqual(["advance payment"]);
+    expect(plan?.removeLabels).toEqual([]);
+    expect(applySubscriptionConversion(entered, false).rows).toHaveLength(1);
+    expect(applySubscriptionConversion(entered, false).schema_version).toBe(2);
   });
 });

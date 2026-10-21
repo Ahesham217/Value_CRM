@@ -30,11 +30,18 @@ declare
   v_model_plan text := 'zz-sub-plan-' || left(gen_random_uuid()::text, 8);
   v_model_other text := 'zz-sub-other-' || left(gen_random_uuid()::text, 8);
   v_shares numeric[];
+  v_count integer;
 begin
-  if to_regclass('public.subscriptions') is not null
-    or to_regclass('public.subscription_periods') is not null
-  then
-    v_fail := v_fail || 'operational subscription table exists; ';
+  if to_regclass('public.subscription_periods') is not null then
+    v_fail := v_fail || 'operational subscription period table exists; ';
+  end if;
+  -- Payment tracking may add public.subscriptions later. The count is dynamic so this
+  -- file still parses before that table exists. Rows must not be backfilled.
+  if to_regclass('public.subscriptions') is not null then
+    execute 'select count(*) from public.subscriptions' into v_count;
+    if v_count <> 0 then
+      v_fail := v_fail || 'subscription rows were backfilled; ';
+    end if;
   end if;
 
   if private.commitment_customer_text('USD', 1, 2200, null, null)

@@ -4,7 +4,7 @@ Internal application for Value Technologies. Staff save clients, vendors, and pr
 
 The hosted database is the Supabase project **Value CRM** (`idhqrvrpzlkpyyqlkozl`, eu-west-1) in the Value Technologies organization. Verifications and Value-Website are separate applications and were not modified.
 
-PIs are the home page. A compact sidebar also opens Clients, Vendors, and Products. Settings is shown only to administrators, and is split into company and bank presets, default terms, and users. A draft is one document: office and currency, client, dates, lead salesperson, items, a payment schedule, delivery terms, and totals. Shipping and reference, additional salespeople, discounts and charges, and the other commercial terms open from quiet actions. A saved value stays visible as a summary when its section is closed. Saving a draft is explicit. On the PI list, search, status, and New PI stay visible. Office, currency, salesperson, and date range are under Filters.
+PIs are the home page. A compact sidebar also opens Subscriptions, Clients, Vendors, and Products. Settings is shown only to administrators, and is split into company and bank presets, default terms, and users. A draft is one document: office and currency, client, dates, lead salesperson, items, a payment schedule, delivery terms, and totals. Shipping and reference, additional salespeople, discounts and charges, and the other commercial terms open from quiet actions. A saved value stays visible as a summary when its section is closed. Saving a draft is explicit. On the PI list, search, status, and New PI stay visible. Office, currency, salesperson, and date range are under Filters.
 
 ## Project decisions
 
@@ -47,7 +47,7 @@ Never put the service-role or secret key in a `VITE_` variable, frontend source,
 
 ## Migrations
 
-SQL lives in `supabase/migrations` and is the reproducible schema. It has already been applied to the Value CRM project. Do not run it again there.
+SQL lives in `supabase/migrations` and is the reproducible schema. Older files have been applied to Value CRM. Do not run those again. The payment-tracking file is called out below and has not been applied.
 
 On a new database, run the files in filename order with the Supabase SQL editor or CLI:
 
@@ -64,6 +64,7 @@ supabase db query --linked -f supabase/migrations/20261019080451_on_demand_pi_pd
 supabase db query --linked -f supabase/migrations/20261019150000_product_pi_history.sql
 supabase db query --linked -f supabase/migrations/20261021180000_payment_schedules.sql
 supabase db query --linked -f supabase/migrations/20261021193000_subscription_commitments.sql
+supabase db query --linked -f supabase/migrations/20261021220000_payment_tracking.sql
 ```
 
 The first migration installs `public.rls_auto_enable()` and the `ensure_rls` event trigger. That is the same automatic RLS trigger used on the other Value Technologies projects: every new table in `public` gets row level security. The trigger does not create policies. This repo creates those policies explicitly and also enables RLS in the table statements.
@@ -74,7 +75,9 @@ The first migration installs `public.rls_auto_enable()` and the `ensure_rls` eve
 
 `20261021180000_payment_schedules.sql` has been applied to Value CRM. On 2026-10-21 the project already had `proforma_invoices.payment_schedule`, the payment functions, legacy drafts with a null schedule, and a structured schedule. Do not run that file again.
 
-`20261021193000_subscription_commitments.sql` is in the repository and has **not** been applied. It adds subscription billing and commitment options, stores a self-contained agreement on a draft line, and adds payment schema version 2. Existing products become one-time. Existing drafts, schema version 1 schedules, and issued snapshots are not rewritten. Do not apply it until the window below. A commitment entered before the SQL is applied is not stored, because the live functions ignore that part of the save.
+Checked on 2026-10-21, Value CRM already has the subscription commitment objects (`product_commitment_options`, `pi_lines.subscription_agreement`, and the allocation functions). `supabase_migrations.schema_migrations` does not list `20261021193000_subscription_commitments`. Do not run that file again unless a diff shows one of those objects is missing. It does not rewrite issued snapshots.
+
+`20261021220000_payment_tracking.sql` is in the repository and has **not** been applied. It adds payment plans, obligations, receipts, allocations, and subscription records. It does not rewrite snapshots, backfill receipts, or activate anything that already exists. New payment permissions default to false. See the rollout below.
 
 The payment-schedule rollout has already happened. A structured draft cannot be saved back to a legacy paragraph. Omitting `payment_schedule` on a structured draft is rejected. A draft whose stored schedule is still null can stay a legacy paragraph. Do not set a structured schedule back to null from an old session.
 
@@ -90,6 +93,23 @@ Apply `20261021193000_subscription_commitments.sql` only to Value CRM (`idhqrvrp
 Until step 2, this editor can show a commitment that the live database will not store. After step 2, the current payment-schedule editor can still save a one-time PI. It cannot read a schema version 2 schedule. If that older tab saves a draft which already has a subscription agreement or a version 2 schedule, the database rejects the save and leaves the stored agreement unchanged. Close the tab and open the PI again.
 
 Do not roll this frontend back after a commitment or a version 2 schedule has been saved. The previous editor cannot send the agreement. Restoring the previous database functions would ignore that agreement, and the next save could clear it. Before any such row exists, the new columns can remain and the function definitions from `20261021180000_payment_schedules.sql` can be restored. Do not drop the new columns once an agreement has been saved. Do not delete invoices, products, users, or snapshots, and do not reset numbering counters. Issued snapshots are not rewritten, so rolling back the database does not restore a previous wording inside an issued document.
+
+### Payment tracking
+
+Apply `20261021220000_payment_tracking.sql` only to Value CRM (`idhqrvrpzlkpyyqlkozl`). Do not apply it to Verifications or Value-Website. It was not applied by the change that added it.
+
+The migration is additive. It does not replace draft save, PI numbering, or snapshot generation, so a browser tab that is already open can keep editing a PI while the SQL is applied. It does add profile columns and replace `private.has_flag` with the same flags plus three new ones. Existing members stay without those write flags. Administrators already pass `has_flag`.
+
+Order:
+
+1. Apply `20261021220000_payment_tracking.sql`.
+2. Deploy the `admin-users` function from this revision. Until that deploy, Settings cannot store the three new checkboxes. Saving a user from an older function does not clear the new columns, because that function does not send them. The function in this revision also leaves a payment flag unchanged when the caller omits it.
+3. Serve this frontend. Ask staff to reload. An old tab will not show Subscriptions or Record payment until it loads this build. It can still save a PI.
+4. An administrator grants “Manage payment tracking and record receipts”, “Reverse receipts”, and “Activate zero-value subscriptions” only to the people who should have them. Do not grant those write flags to every member.
+
+Do not roll the frontend back after a receipt or subscription exists if you also remove the SQL. The previous screen simply will not show the records. Dropping the new tables deletes receipt and subscription history and cannot be reconstructed from issued PDFs. Issued snapshots are not changed by tracking, receipts, reversals, or activation. If no plan has been started, the new tables and columns can be dropped and `private.has_flag` restored from `20261021193000_subscription_commitments.sql`'s predecessor definition in `20261018120100_functions.sql`, plus any flags added since. Do not delete invoices, products, users, or snapshots, and do not reset numbering counters.
+
+`supabase/tests/payment_tracking_concurrent.sh` commits rows. Run it only on a disposable database, never on Value CRM.
 
 `20261018120300_egypt_logo.sql` stores the logo extracted from `reference-templates/Egypt Template.xlsx`. The UAE workbooks do not contain a logo. If Settings shows no Egypt logo, run that file once in the SQL editor.
 
@@ -197,7 +217,7 @@ An instalment count must be a whole number from 2 to 120. A blank, zero, fractio
 
 Issued snapshots that use a whole-PI schedule store schema version 1, the agreement, the canonical amounts, instalment lines, known dates, unresolved due formulas, and the customer text. Those snapshots use `egypt-v2` or `uae-v2`. A long agreement is drawn as a payment table. Older `egypt-v1` and `uae-v1` snapshots keep their saved payment paragraph. A legacy draft can still be issued that way until someone replaces the paragraph with a schedule, as long as the PI has no subscription. Duplicating a structured PI copies the amounts and event rules, assigns new row identifiers, and clears fixed dates and before-shipment deadlines so they are reviewed. A revision copies the agreement, keeps those dates, and recalculates percentage and remainder amounts when the total changes. The original issued snapshot is not changed.
 
-Schema version 1 is not reused for a subscription. Adding a subscription asks for an explicit update to schema version 2. Until that update is saved, the old schedule stays a percentage of the whole PI total and the draft cannot be saved with the subscription. Version 2 percentages apply only to the one-time amount. The subscription's current charge is a separate obligation, payable 100% in advance, and it cannot be put on an instalment. A PI that contains only a subscription has no instalment rows. That empty one-time portion is valid: the editor does not treat the PI as a zero total and does not offer “No payment due” as a new choice while the total is positive. If the draft is already marked that way, staff can turn it off without replacing the schedule. One-time rows left on that PI are still rejected. A PI whose grand total is actually zero still needs the explicit “No payment due” schedule. Each subscription line keeps its own obligation id so a later receipt can be assigned to that charge. The database rejects two lines on the same PI that reuse one id, on save and again before issue. Saving or revising keeps the ids. Duplicating the PI assigns new ones. The customer PDF may describe the advance in one sentence.
+Schema version 1 is not reused for a subscription. Adding a subscription asks for an explicit update to schema version 2. Until that update is saved, the old schedule stays a percentage of the whole PI total and the draft cannot be saved with the subscription. Version 2 percentages apply only to the one-time amount. The subscription's current charge is a separate obligation, payable 100% in advance, and it cannot be put on an instalment. A PI that contains only a subscription has no instalment rows. That empty one-time portion is valid: the editor does not treat the PI as a zero total and does not offer “No payment due” as a new choice while the total is positive. Selecting a subscription on a new empty schedule prepares that allocation as part of the selection and says the current charge is payable 100% in advance, without asking for another 100% row. If rows were already entered, or the draft is still a legacy paragraph, one confirmation lists the rows that will be removed or kept. The saved draft does not change merely because the page opened. The confirmed change is stored when the draft is saved. If the draft is already marked that way, staff can turn it off without replacing the schedule. One-time rows left on that PI are still rejected. A PI whose grand total is actually zero still needs the explicit “No payment due” schedule. Each subscription line keeps its own obligation id so a later receipt can be assigned to that charge. The database rejects two lines on the same PI that reuse one id, on save and again before issue. Saving or revising keeps the ids. Duplicating the PI assigns new ones. The customer PDF may describe the advance in one sentence.
 
 The PI total is still calculated exactly as above. Payment allocation does not change it. The current line totals are the weights. The invoice discount is shared across those totals, with any cent remainder going to the line that was rounded furthest from its exact share and, on a tie, to the earlier line. Shipping, installation, and bank charges are then shared across the discounted line totals in the same way. Tax uses the saved tax amount and the same exclusions as the PI: a charge excluded from tax is still part of the line's payment amount, but it is not part of that line's taxable weight. The subscription amounts and the one-time amounts add up to the saved grand total. A final cent, if the parts differ from that total, is placed on the last line that can accept it. Future subscription years are not weights and are not in the total.
 
@@ -211,16 +231,25 @@ Issued subscription lines are part of `egypt-v3` or `uae-v3`. The snapshot store
 
 Product PI history shows the saved Year 1 unit price. It does not add later years or allocate the invoice discount.
 
-This phase does not record a payment, activate a subscription, create a renewal PI, confirm a price with the vendor, or send a reminder. The future behaviour, which is not implemented, is:
+**Start payment tracking** pins collection to one issued version the staff member confirms was agreed with the customer. Generating, downloading, or revising a PI does not start tracking, and a draft cannot be tracked. The plan stores the parent PI, the source version, the currency, the agreed total, and the obligations copied from that version's snapshot. It does not rebuild them from the current draft, the catalogue, or company settings. One PI has one active plan. Starting again returns that plan. A later revision does not move it, erase receipts, or create another subscription. The screen says when the latest issued version is different from the tracked one. Replacing a plan is not available.
 
-- The subscription starts when the Year 1 charge is fully paid. That payment date is the start date. It is not invented when the PI is issued.
-- Each later year begins on the anniversary of that start date. The anniversary stays on that date when a later payment is late.
-- One calendar month before each anniversary, staff are reminded to confirm the next year's price with the vendor.
-- The vendor confirms the price before the renewal PI is issued. For the vendor-confirmed rule, the year's price is the saved base plus that year's confirmed adjustment. It is not the previous year's invoiced price plus another adjustment.
-- The renewal PI includes only that year's charge. The same payment rule applies: 100% in advance, separate from any one-time instalments.
-- At the end of the commitment, someone reviews it. It does not renew automatically.
+Schema version 1 obligations are the whole PI, including expanded instalments. Schema version 2 keeps each subscription advance separate from the one-time rows. An instalment's identity is its source row and sequence, not its label. A legacy payment paragraph is not parsed and cannot be tracked. Its display and PDF download stay as they are. A fixed date is stored as agreed. An event without a date stays “Awaiting delivery date”, “Awaiting confirmation date”, or the matching milestone, and is not overdue. “Before shipment” with no deadline stays “Deadline to be set”. Issuing, downloading, or receiving some other payment does not invent a delivery or shipment date. A payment can still be recorded against an obligation whose date is unresolved.
 
-Generating or downloading a PI does not collect money, send a reminder, or open a collection plan. A future collection plan has to be activated from one accepted issued version. A later revision must not retarget that plan or erase receipts. The issued PDF is rendered only from the snapshot: client and contact, line order, quantities, units, prices, saved totals, terms, company and bank details, the company contact, dates, and the saved logo. The snapshot retains the preparer for internal records, but that field is not printed. Current client, product, user, logo, or bank records are not read to fill an old document. If a snapshot is missing data the renderer needs, the download stops with that gap instead of substituting current records. Replacing the logo or a catalogue row does not change an issued snapshot.
+**Record payment** takes the amount, the date received, the method (bank transfer, cash, cheque, or other), an optional reference, an optional note, and an explicit allocation. The currency is the PI currency. There is no conversion. The person recorded is the signed-in user. A submission id prevents a double submit. Bank references are not required to be unique. Allocations must add up to the receipt, stay inside one PI, and cannot exceed an obligation's unpaid balance or the plan's outstanding balance. A suggested split is shown in document order and is saved only when the user records it. A partial payment reduces the outstanding amount. It does not turn a 100% advance agreement into instalments, and a partial subscription payment does not activate the subscription.
+
+Collection status stays separate from Draft, Sent, Accepted, and Cancelled. Recording a payment does not change that commercial status. Obligations are unpaid, partially paid, or paid. Received money is not labelled as revenue.
+
+**Reverse payment** asks for a reason and keeps the original receipt, who reversed it, and when. Repeating it does not reverse the receipt twice. Balances are restored. The issued snapshot and PDF are unchanged. Correct an amount or allocation by reversing the receipt and recording a replacement. If a reversal means an activated subscription is no longer fully paid, the subscription stays, its start date stays, and it is marked **Payment review required**. There is no editor for the start date.
+
+A subscription is created only from an issued subscription obligation on the active plan. On a mixed PI, that subscription can activate while the machine is still unpaid. The start date is the received date on which non-reversed allocations first cover the obligation, ordered by received date and then by a fixed tie-breaker. It is not the day the PI was created, generated, or the day someone typed a backdated receipt. The screen shows that date before the payment is saved. One source obligation creates one subscription, including after a revision. A zero-value subscription is not activated because zero equals zero. **Activate at no charge** asks for a start date and a reason, and records who did it.
+
+The subscription stores the client name from the snapshot, the product model and description from the snapshot, the quantity, currency, commitment, Year 1 price, later-year base and rule, and that adjustments do not compound. Issued snapshots do not contain a vendor, so no historical vendor is stored. The product page's current vendor, when shown, is labelled as the current catalogue vendor. Anniversaries are calculated from the original start date. A 29 February start uses 28 February in a non-leap year and 29 February again in a later leap year. A one-year commitment has no committed second year. A three-year commitment ends at the third anniversary, which is an exclusive end and not itself a payment. A late receipt does not move those dates. Future CPI years say **Price pending vendor confirmation** and are not added to the outstanding balance. The base is not shown as an amount due. There is no “renewal paid” state.
+
+Subscriptions are listed from the sidebar. A person sees a subscription only when they can read its source PI. The same PI visibility applies to plans, obligations, receipts, and balances, including counts and filters.
+
+The next phase is not implemented. It is planned as an internal reminder one calendar month before each customer's next committed subscription year, vendor price confirmation, a linked renewal PI for that year only, 100% in advance, and a review at the end of the commitment. There is no reminder job, email, CPI lookup, auto-renewal, payment gateway, bank reconciliation, or accounting ledger.
+
+Generating or downloading a PI does not collect money or send a reminder. The issued PDF is rendered only from the snapshot: client and contact, line order, quantities, units, prices, saved totals, terms, company and bank details, the company contact, dates, and the saved logo. The snapshot retains the preparer for internal records, but that field is not printed. Current client, product, user, logo, or bank records are not read to fill an old document. If a snapshot is missing data the renderer needs, the download stops with that gap instead of substituting current records. Replacing the logo or a catalogue row does not change an issued snapshot.
 
 `pi_versions.pdf_status` and `pdf_path` remain as legacy metadata. New versions are stored as `issued` with no file path. Older rows may still say `pending` or `ready`; the screen does not treat that as a failed download. Previously stored files in the private `pi-pdfs` bucket are left in place. Removing them is a separate step, described in [docs/cleanup-pi-pdfs.md](docs/cleanup-pi-pdfs.md), and it has not been run.
 
@@ -260,9 +289,13 @@ Active members can read clients, vendors, products, contacts, company presets, a
 | PI visibility: all | Read every PI. |
 | Create and edit drafts | Create, save, duplicate, delete unissued drafts, and open a revision. |
 | Generate PIs | Issue a number and store the snapshot. It is not required to download an issued version. |
+| Manage payment tracking and record receipts | Start tracking on an issued version and record allocated receipts. Existing members are not given this automatically. |
+| Reverse receipts | Reverse a posted receipt. Recording a receipt does not include this. |
+| Activate zero-value subscriptions | Set an explicit start date and reason when the obligation is zero. |
 | Manage clients / vendors / products | Create and edit those records. Referenced companies and products are archived, not deleted. |
 | View purchase prices | Read and, together with Manage products, write `product_costs`. The catalogue table has no purchase-price column. |
-| Administrator | All of the above, plus Settings and the user function. |
+| Administrator | All of the above, plus Settings and the user function. Payment write flags are included. |
+| Read a PI | Also read its payment plan, obligations, receipts, balances, and subscriptions. A direct link does not bypass PI visibility. |
 
 Admins are not a separate bypass hidden in the browser. `private.has_flag` treats an active admin as having every flag, and the user function checks `is_admin` in the database.
 
@@ -314,4 +347,4 @@ Keep at least one recent database dump. A copy of `pi-pdfs` only preserves files
 
 ## Limits of this version
 
-No pipeline, inventory, accounting, payment collection, receipt allocation, reminder jobs, subscription activation, renewal PI creation, vendor price confirmation, email delivery of PIs, customer portal, currency conversion, or automatic tax rules. The payment schedule defines what was agreed. It does not record what was received. A subscription agreement stores the current charge and the later-year rule. It does not start the subscription. Purchase-price permission is a separate table, not a column on `products`. Historical salesperson assignment is the current assignment list plus the people who created the draft or generated a version.
+No pipeline, inventory, accounting ledger, revenue recognition, tax invoice, supplier payment, payment gateway, bank reconciliation, receipt attachment, reminder job, renewal PI, vendor price confirmation workflow, email delivery of PIs, customer portal, currency conversion, or automatic tax rules. Payment tracking records receipts and outstanding balances against one agreed issued version. It does not label a receipt as revenue. A subscription starts when its own first-year obligation is fully paid, or by an explicit no-charge activation. Renewal invoicing is not implemented. Purchase-price permission is a separate table, not a column on `products`. Historical salesperson assignment is the current assignment list plus the people who created the draft or generated a version.

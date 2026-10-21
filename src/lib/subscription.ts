@@ -2,6 +2,7 @@ import Decimal from "decimal.js";
 import { formatMoney } from "./format";
 import { roundMoney } from "./money";
 import {
+  emptyPaymentSchedule,
   previewPaymentSchedule,
   type CanonicalPaymentRow,
   type PaymentPreview,
@@ -656,4 +657,95 @@ export function catalogueDriftMessage(input: {
   if (!changed) return archived;
   const drift = "The catalogue commitment has changed since this line was saved. This PI still uses the saved terms.";
   return archived ? `${archived} ${drift}` : drift;
+}
+
+export type SubscriptionConversionPlan = {
+  message: string;
+  removeLabels: string[];
+  retainLabels: string[];
+  confirmLabel: string;
+};
+
+function scheduleRowLabel(schedule: PaymentSchedule, index: number): string {
+  return schedule.rows[index]?.label.trim() || `Payment ${index + 1}`;
+}
+
+/** What an explicit allocation update will change. It does not write anything by itself. */
+export function subscriptionConversionPlan(input: {
+  mode: "legacy" | "structured";
+  schedule: PaymentSchedule;
+  hasSubscription: boolean;
+  subscriptionOnly: boolean;
+}): SubscriptionConversionPlan | null {
+  if (!input.hasSubscription) return null;
+  if (input.mode === "structured" && input.schedule.schema_version === 2) return null;
+  if (input.mode === "legacy") {
+    return {
+      removeLabels: [],
+      retainLabels: [],
+      confirmLabel: "Confirm allocation update",
+      message: "This draft still uses a payment paragraph. The paragraph is not parsed and is not turned into instalments. Confirming replaces it with a schedule where the current subscription charge is payable 100% in advance. Save the draft to store that change.",
+    };
+  }
+  const labels = input.schedule.rows.map((_, index) => scheduleRowLabel(input.schedule, index));
+  if (labels.length === 0) {
+    return {
+      removeLabels: [],
+      retainLabels: [],
+      confirmLabel: "Confirm allocation update",
+      message: "The current subscription charge is payable 100% in advance. A separate 100% payment row is not required. Confirming records that allocation. Save the draft to store it.",
+    };
+  }
+  if (input.subscriptionOnly) {
+    return {
+      removeLabels: labels,
+      retainLabels: [],
+      confirmLabel: "Confirm removal and update allocation",
+      message: "The current subscription charge is payable 100% in advance. There is no one-time amount, so the payment rows listed below will be removed. Nothing is removed until you confirm, and the draft stores that change when you save.",
+    };
+  }
+  return {
+    removeLabels: [],
+    retainLabels: labels,
+    confirmLabel: "Confirm allocation update",
+    message: "The subscription charge will be payable 100% in advance and will not use these rows. The rows below stay, and they will apply only to the one-time amount. Percentages in those rows become percentages of the one-time amount, not of the whole PI. Confirm to update the allocation, then save the draft.",
+  };
+}
+
+/** Apply a confirmed allocation update. Subscription-only drafts drop one-time rows. */
+export function applySubscriptionConversion(schedule: PaymentSchedule | null, subscriptionOnly: boolean): PaymentSchedule {
+  const next = convertScheduleToAllocation(schedule);
+  if (!subscriptionOnly) return next;
+  return { ...next, rows: [], residual_target: null };
+}
+
+/**
+ * Prepare an empty schedule when the user selects a subscription.
+ * Returns null when the caller should leave the saved schedule alone.
+ */
+export function adjustScheduleForSubscriptionSelection(input: {
+  mode: "legacy" | "structured";
+  schedule: PaymentSchedule;
+  hadSubscription: boolean;
+  hasSubscription: boolean;
+}): PaymentSchedule | null {
+  if (input.mode !== "structured") return null;
+  if (!input.hadSubscription && input.hasSubscription) {
+    if (input.schedule.schema_version === 1 && input.schedule.rows.length === 0 && !input.schedule.no_payment_due) {
+      return convertScheduleToAllocation(input.schedule);
+    }
+    return null;
+  }
+  if (
+    input.hadSubscription
+    && !input.hasSubscription
+    && input.schedule.schema_version === 2
+    && input.schedule.rows.length === 0
+    && !input.schedule.no_payment_due
+    && !input.schedule.dates_need_review
+    && (input.schedule.residual_target == null)
+  ) {
+    return emptyPaymentSchedule();
+  }
+  return null;
 }

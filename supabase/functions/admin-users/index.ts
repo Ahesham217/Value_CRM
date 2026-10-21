@@ -18,6 +18,9 @@ type UserInput = {
   can_manage_vendors?: boolean;
   can_manage_products?: boolean;
   can_view_purchase_prices?: boolean;
+  can_manage_payments?: boolean;
+  can_reverse_payments?: boolean;
+  can_activate_zero_subscriptions?: boolean;
 };
 
 const cors = {
@@ -33,8 +36,10 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-function flags(user: UserInput) {
-  return {
+const paymentFlags = ["can_manage_payments", "can_reverse_payments", "can_activate_zero_subscriptions"] as const;
+
+function flags(user: UserInput, existing?: Record<string, unknown>) {
+  const profile: Record<string, unknown> = {
     full_name: (user.full_name ?? "").trim(),
     phone: (user.phone ?? "").trim(),
     is_active: user.is_active !== false,
@@ -48,6 +53,12 @@ function flags(user: UserInput) {
     can_manage_products: user.can_manage_products === true,
     can_view_purchase_prices: user.can_view_purchase_prices === true,
   };
+  for (const flag of paymentFlags) {
+    if (existing && !(flag in existing)) continue;
+    const requested = user[flag];
+    profile[flag] = requested === undefined ? existing?.[flag] === true : requested === true;
+  }
+  return profile;
 }
 
 Deno.serve(async (req: Request) => {
@@ -99,8 +110,7 @@ Deno.serve(async (req: Request) => {
   }
 
   const input = body.user ?? {};
-  const profile = flags(input);
-  if (!profile.full_name) return json({ error: "Name is required." }, 400);
+  if (!(input.full_name ?? "").trim()) return json({ error: "Name is required." }, 400);
 
   async function activeAdminCount(exceptId?: string): Promise<number> {
     const { count, error } = await admin
@@ -127,26 +137,29 @@ Deno.serve(async (req: Request) => {
       }
       const created = body.action === "invite"
         ? await admin.auth.admin.inviteUserByEmail(email, {
-          data: { full_name: profile.full_name, phone: profile.phone },
+          data: { full_name: (input.full_name ?? "").trim(), phone: (input.phone ?? "").trim() },
           redirectTo: body.redirect_to,
         })
         : await admin.auth.admin.createUser({
           email,
           password: body.password ?? "",
           email_confirm: true,
-          user_metadata: { full_name: profile.full_name, phone: profile.phone },
+          user_metadata: { full_name: (input.full_name ?? "").trim(), phone: (input.phone ?? "").trim() },
         });
       if (created.error || !created.data.user) return json({ error: created.error?.message ?? "User was not created." }, 400);
-      const { error: updateError } = await admin.from("profiles").update(profile).eq("id", created.data.user.id);
+      const { data: createdProfile, error: createdProfileError } = await admin.from("profiles").select("*").eq("id", created.data.user.id).maybeSingle();
+      if (createdProfileError) return json({ error: createdProfileError.message }, 400);
+      const { error: updateError } = await admin.from("profiles").update(flags(input, createdProfile ?? undefined)).eq("id", created.data.user.id);
       if (updateError) return json({ error: updateError.message }, 400);
       return json({ id: created.data.user.id });
     }
 
     if (body.action === "update") {
       if (!input.id) return json({ error: "User id is required." }, 400);
-      const { data: existing, error: existingError } = await admin.from("profiles").select("is_admin, is_active").eq("id", input.id).maybeSingle();
+      const { data: existing, error: existingError } = await admin.from("profiles").select("*").eq("id", input.id).maybeSingle();
       if (existingError || !existing) return json({ error: existingError?.message ?? "User not found." }, 404);
-      const removingLastAdmin = existing.is_admin && existing.is_active && (!profile.is_admin || !profile.is_active);
+      const profile = flags(input, existing);
+      const removingLastAdmin = existing.is_admin === true && existing.is_active === true && (profile.is_admin !== true || profile.is_active !== true);
       if (removingLastAdmin && await activeAdminCount(input.id) === 0) {
         return json({ error: "The last active administrator cannot be removed." }, 400);
       }

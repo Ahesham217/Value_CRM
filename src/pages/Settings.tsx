@@ -20,6 +20,9 @@ type ManagedUser = {
   can_manage_vendors: boolean;
   can_manage_products: boolean;
   can_view_purchase_prices: boolean;
+  can_manage_payments: boolean;
+  can_reverse_payments: boolean;
+  can_activate_zero_subscriptions: boolean;
 };
 
 type SettingsTab = "company" | "terms" | "users";
@@ -39,6 +42,9 @@ const emptyUser = (): ManagedUser => ({
   can_manage_vendors: false,
   can_manage_products: false,
   can_view_purchase_prices: false,
+  can_manage_payments: false,
+  can_reverse_payments: false,
+  can_activate_zero_subscriptions: false,
 });
 
 function presetReady(preset: CompanyPreset): boolean {
@@ -182,7 +188,12 @@ export function SettingsPage() {
   }
 
   function openUser(user: ManagedUser) {
-    setDraftUser((current) => (current.id === user.id ? current : user));
+    setDraftUser((current) => (current.id === user.id ? current : {
+      ...user,
+      can_manage_payments: user.can_manage_payments === true,
+      can_reverse_payments: user.can_reverse_payments === true,
+      can_activate_zero_subscriptions: user.can_activate_zero_subscriptions === true,
+    }));
     setUserView("form");
   }
 
@@ -373,6 +384,9 @@ export function SettingsPage() {
                 </Field>
                 <Check label="Create and edit drafts, revisions, and duplicates" checked={draftUser.can_edit_drafts} onChange={(checked) => setDraftUser({ ...draftUser, can_edit_drafts: checked })} />
                 <Check label="Generate PIs" checked={draftUser.can_generate_pis} onChange={(checked) => setDraftUser({ ...draftUser, can_generate_pis: checked })} />
+                <Check label="Manage payment tracking and record receipts" hint="Not granted automatically. Administrators already have this." checked={draftUser.can_manage_payments} onChange={(checked) => setDraftUser({ ...draftUser, can_manage_payments: checked })} />
+                <Check label="Reverse receipts" checked={draftUser.can_reverse_payments} onChange={(checked) => setDraftUser({ ...draftUser, can_reverse_payments: checked })} />
+                <Check label="Activate zero-value subscriptions" checked={draftUser.can_activate_zero_subscriptions} onChange={(checked) => setDraftUser({ ...draftUser, can_activate_zero_subscriptions: checked })} />
               </fieldset>
               <fieldset className="grid gap-2 rounded-lg border border-line p-4 text-sm">
                 <legend className="px-1 font-medium text-slate-800">Records</legend>

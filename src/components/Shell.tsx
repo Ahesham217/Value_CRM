@@ -5,6 +5,7 @@ import { Menu } from "./ui";
 
 const links = [
   { to: "/pis", label: "Proforma invoices" },
+  { to: "/subscriptions", label: "Subscriptions" },
   { to: "/clients", label: "Clients" },
   { to: "/vendors", label: "Vendors" },
   { to: "/products", label: "Products" },
@@ -25,6 +26,14 @@ function NavIcon({ name }: { name: string }) {
       <svg className={common} viewBox="0 0 16 16" aria-hidden="true">
         <circle cx="8" cy="5.5" r="2.2" fill="none" stroke="currentColor" strokeWidth="1.4" />
         <path d="M3.5 13.2c.7-2 2.3-3 4.5-3s3.8 1 4.5 3" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  if (name === "Subscriptions") {
+    return (
+      <svg className={common} viewBox="0 0 16 16" aria-hidden="true">
+        <rect x="2.5" y="3.5" width="11" height="10" rx="1.4" fill="none" stroke="currentColor" strokeWidth="1.4" />
+        <path d="M2.5 6.5h11M6 2.8v2.2M10 2.8v2.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
       </svg>
     );
   }
