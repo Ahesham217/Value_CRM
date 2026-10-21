@@ -31,6 +31,13 @@ export function PaymentScheduleSection({
   schedule,
   currency,
   grandTotal,
+  percentageOf = "grand_total",
+  percentageBase = null,
+  allocationNote = null,
+  customerText = null,
+  conversionMessage = null,
+  onConvert,
+  residualRequired = false,
   canEdit,
   showLegacyCancel,
   onLegacyText,
@@ -43,6 +50,13 @@ export function PaymentScheduleSection({
   schedule: PaymentSchedule;
   currency: CurrencyCode | null;
   grandTotal: string | null;
+  percentageOf?: "grand_total" | "one_time";
+  percentageBase?: string | null;
+  allocationNote?: string | null;
+  customerText?: string | null;
+  conversionMessage?: string | null;
+  onConvert?: () => void;
+  residualRequired?: boolean;
   canEdit: boolean;
   showLegacyCancel: boolean;
   onLegacyText: (value: string) => void;
@@ -71,9 +85,31 @@ export function PaymentScheduleSection({
     );
   }
 
-  const preview = previewPaymentSchedule(schedule, currency, grandTotal);
+  const usingAllocation = schedule.schema_version === 2 && percentageOf === "one_time";
+  const previewInput = usingAllocation ? { ...schedule, schema_version: 1 as const } : schedule;
+  const rawPreview = previewPaymentSchedule(
+    previewInput,
+    currency,
+    usingAllocation ? percentageBase : grandTotal,
+    usingAllocation ? { base: "one_time" } : undefined,
+  );
+  const preview = usingAllocation
+    ? {
+      ...rawPreview,
+      issues: rawPreview.issues.map((issue) => ({
+        ...issue,
+        message: issue.message.replaceAll("grand total", "one-time amount").replaceAll("Grand total", "One-time amount"),
+      })),
+    }
+    : rawPreview;
   const remainderUsed = schedule.rows.some((row) => row.amount.type === "remainder");
-  const update = (next: PaymentSchedule) => onSchedule({ ...next, dates_need_review: next.dates_need_review });
+  const update = (next: PaymentSchedule) => onSchedule({
+    ...next,
+    schema_version: schedule.schema_version === 2 ? 2 : next.schema_version,
+    residual_target: schedule.schema_version === 2 ? (next.residual_target ?? schedule.residual_target ?? null) : next.residual_target,
+    dates_need_review: next.dates_need_review,
+  });
+  const oneTimeIsZero = usingAllocation && percentageBase === "0.00";
 
   function updateRow(id: string, patch: Partial<PaymentRow>) {
     update({
@@ -104,6 +140,26 @@ export function PaymentScheduleSection({
           </p>
         )}
       </div>
+      {conversionMessage ? (
+        <div className="mt-3">
+          <Banner tone="info">
+            {conversionMessage}
+            {canEdit && onConvert ? (
+              <button type="button" className="ml-2 underline" onClick={onConvert}>Update payment allocation</button>
+            ) : null}
+          </Banner>
+        </div>
+      ) : null}
+      {allocationNote ? <p className="mt-3 text-sm text-slate-700">{allocationNote}</p> : null}
+      {residualRequired && schedule.schema_version === 2 ? (
+        <div className="mt-3">
+          <p className="text-sm text-slate-700">These charges are not on a priced line. Choose where they belong. This does not create a subscription price.</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button type="button" variant={schedule.residual_target === "subscription" ? "primary" : "secondary"} onClick={() => update({ ...schedule, residual_target: "subscription" })}>Subscription advance</Button>
+            <Button type="button" variant={schedule.residual_target === "one_time" ? "primary" : "secondary"} onClick={() => update({ ...schedule, residual_target: "one_time" })}>One-time schedule</Button>
+          </div>
+        </div>
+      ) : null}
       {schedule.dates_need_review ? (
         <div className="mt-3">
           <Banner tone="info">
@@ -134,7 +190,10 @@ export function PaymentScheduleSection({
           ) : null}
         </div>
       ) : null}
-      {!schedule.no_payment_due && schedule.rows.length === 0 && canEdit ? (
+      {oneTimeIsZero ? (
+        <p className="mt-3 text-sm text-slate-700">The current charge is payable 100% in advance. There is no one-time amount to split into instalments.</p>
+      ) : null}
+      {!schedule.no_payment_due && !oneTimeIsZero && schedule.rows.length === 0 && canEdit ? (
         <div className="mt-3 flex flex-wrap gap-2">
           <Button type="button" variant="secondary" onClick={() => update(fullAdvanceTemplate())}>100% on confirmation</Button>
           <Button type="button" variant="secondary" onClick={() => update(advanceThenShipmentTemplate())}>30% / 70% before shipment</Button>
@@ -176,9 +235,10 @@ export function PaymentScheduleSection({
           ) : null}
         </div>
       ) : null}
-      {preview.allocated && grandTotal ? (
+      {preview.allocated && (usingAllocation ? percentageBase : grandTotal) ? (
         <p className="mt-3 text-sm tabular-nums text-ink">
-          Allocated {formatMoney(preview.allocated, currency)} of {formatMoney(grandTotal, currency)}
+          Allocated {formatMoney(preview.allocated, currency)} of {formatMoney(usingAllocation ? percentageBase : grandTotal, currency)}
+          {usingAllocation ? " of the one-time amount" : ""}
           {preview.unallocated && preview.unallocated !== "0.00" ? ` · Unallocated ${formatMoney(preview.unallocated, currency)}` : ""}
           {preview.overallocated ? ` · Over-allocated by ${formatMoney(preview.overallocated, currency)}` : ""}
         </p>
@@ -191,7 +251,7 @@ export function PaymentScheduleSection({
       <div className="mt-3 rounded-md border border-line bg-canvas px-3 py-2">
         <p className="text-xs font-medium text-muted">Customer payment terms</p>
         <p className="mt-1 text-sm text-ink">
-          {preview.customerText ?? "The payment terms appear here when the schedule is complete. They are generated from the schedule and are not edited separately."}
+          {customerText ?? preview.customerText ?? "The payment terms appear here when the schedule is complete. They are generated from the schedule and are not edited separately."}
         </p>
       </div>
       {showLegacyCancel && canEdit ? (

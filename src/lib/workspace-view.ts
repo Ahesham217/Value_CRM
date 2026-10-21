@@ -164,6 +164,8 @@ export type EditorSnapshot = {
     unit: string;
     quantity: string;
     unitPrice: string;
+    commitmentOptionId?: string;
+    laterYearBase?: string;
   }>;
   discountType: string;
   discountValue: string;

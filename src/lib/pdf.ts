@@ -160,7 +160,12 @@ function itemsTable(snapshot: PiSnapshot): Content {
   for (const line of snapshot.lines) {
     body.push([
       { text: line.model_code || "—", fontSize: 8 },
-      { text: line.description || "—", fontSize: 8 },
+      {
+        text: line.subscription?.customer_text
+          ? [{ text: line.description || "—", fontSize: 8 }, { text: `\n${line.subscription.customer_text}`, fontSize: 8, color: MUTED }]
+          : (line.description || "—"),
+        fontSize: 8,
+      },
       { text: line.unit || "—", fontSize: 8 },
       { text: formatQuantity(line.quantity), fontSize: 8, alignment: "right" },
       { text: formatMoney(line.unit_price), fontSize: 8, alignment: "right" },
@@ -327,7 +332,7 @@ function declaration(snapshot: PiSnapshot, layout: IssuedLayoutVersion): Content
   };
 }
 
-export const ISSUED_LAYOUT_VERSIONS = ["egypt-v1", "uae-v1", "egypt-v2", "uae-v2"] as const;
+export const ISSUED_LAYOUT_VERSIONS = ["egypt-v1", "uae-v1", "egypt-v2", "uae-v2", "egypt-v3", "uae-v3"] as const;
 
 export type IssuedLayoutVersion = (typeof ISSUED_LAYOUT_VERSIONS)[number];
 
@@ -353,6 +358,12 @@ function missingSnapshotData(snapshot: PiSnapshot): string[] {
     const payment = snapshot.payment;
     if (!payment || payment.schema_version !== 1 || typeof payment.customer_text !== "string" || !Array.isArray(payment.rows)) {
       missing.push("payment schedule");
+    }
+  }
+  if (snapshot.layout_version === "egypt-v3" || snapshot.layout_version === "uae-v3") {
+    const payment = snapshot.payment;
+    if (!payment || payment.schema_version !== 2 || typeof payment.customer_text !== "string" || !Array.isArray(payment.rows) || !Array.isArray(payment.subscription_obligations)) {
+      missing.push("payment allocation");
     }
   }
   return missing;
@@ -504,6 +515,103 @@ function termsV2(snapshot: PiSnapshot): Content {
   return { stack: [sectionTitle("Commercial terms"), ...entries] };
 }
 
+function structuredPaymentV3(snapshot: PiSnapshot): Content {
+  const payment = snapshot.payment;
+  if (!payment || payment.schema_version !== 2) return { text: "" };
+  if (payment.no_payment_due || payment.presentation !== "table") {
+    return {
+      text: [{ text: "Payment terms: ", bold: true }, { text: payment.customer_text }],
+      fontSize: 9,
+      margin: [0, 0, 0, 3],
+    };
+  }
+  const body: Content[][] = [[
+    { text: "Payment", style: "th" },
+    { text: "Amount", style: "th", alignment: "right" },
+    { text: "Due", style: "th" },
+  ]];
+  if (payment.subscription_total !== "0.00") {
+    body.push([
+      { text: "Subscription, payable 100% in advance", fontSize: 8 },
+      { text: formatMoney(payment.subscription_total, snapshot.currency), alignment: "right", fontSize: 8 },
+      { text: "In advance", fontSize: 8 },
+    ]);
+  }
+  for (const row of payment.rows) {
+    const label = row.label || `Payment ${row.position}`;
+    if (row.instalments && row.instalments.length > 0) {
+      for (const instalment of row.instalments) {
+        body.push([
+          { text: `${label} (${instalment.sequence} of ${instalment.count})`, fontSize: 8 },
+          { text: formatMoney(instalment.amount, snapshot.currency), alignment: "right", fontSize: 8 },
+          { text: sentenceCase(instalment.due_formula), fontSize: 8 },
+        ]);
+      }
+    } else {
+      body.push([
+        { text: label, fontSize: 8 },
+        { text: paymentAmountLabel(row, snapshot.currency), alignment: "right", fontSize: 8 },
+        { text: sentenceCase(row.due_formula), fontSize: 8 },
+      ]);
+    }
+  }
+  return {
+    stack: [
+      sectionTitle("Payment schedule"),
+      {
+        table: { headerRows: 1, widths: [168, 110, "*"], body, dontBreakRows: true },
+        layout: {
+          fillColor: (rowIndex: number) => (rowIndex === 0 ? "#e8eef4" : null),
+          hLineColor: () => LINE,
+          vLineColor: () => LINE,
+          hLineWidth: () => 0.4,
+          vLineWidth: () => 0.4,
+          paddingLeft: () => 4,
+          paddingRight: () => 4,
+          paddingTop: () => 3,
+          paddingBottom: () => 3,
+        },
+      },
+    ],
+  };
+}
+
+function termsV3(snapshot: PiSnapshot): Content {
+  const entries: Content[] = [];
+  if (paragraph(snapshot.terms.price_basis)) {
+    entries.push({ text: [{ text: "Price basis: ", bold: true }, { text: snapshot.terms.price_basis }], fontSize: 9, margin: [0, 0, 0, 3] });
+  }
+  entries.push(structuredPaymentV3(snapshot));
+  for (const [label, value] of [
+    ["Delivery", snapshot.terms.delivery_terms],
+    ["Warranty", snapshot.terms.warranty],
+    ["Notes", snapshot.terms.additional_notes],
+  ] as const) {
+    if (!paragraph(value)) continue;
+    entries.push({ text: [{ text: `${label}: `, bold: true }, { text: value }], fontSize: 9, margin: [0, 0, 0, 3] });
+  }
+  if (entries.length === 0 && !paragraph(snapshot.bank.notes)) return { text: "" };
+  return { stack: [sectionTitle("Commercial terms"), ...entries] };
+}
+
+function buildIssuedDocumentV3(snapshot: PiSnapshot, layout: IssuedLayoutVersion): TDocumentDefinitions {
+  const document = buildIssuedDocumentV2(snapshot, layout);
+  return {
+    ...document,
+    content: [
+      header(snapshot),
+      { canvas: [{ type: "line", x1: 0, y1: 0, x2: 531, y2: 0, lineWidth: 1, lineColor: RULE }] },
+      parties(snapshot, layout),
+      attribution(snapshot),
+      itemsTable(snapshot),
+      totals(snapshot),
+      termsV3(snapshot),
+      bank(snapshot),
+      declaration(snapshot, layout),
+    ],
+  };
+}
+
 function buildIssuedDocumentV2(snapshot: PiSnapshot, layout: IssuedLayoutVersion): TDocumentDefinitions {
   return {
     pageSize: "A4",
@@ -551,6 +659,8 @@ const issuedLayouts: Record<IssuedLayoutVersion, (snapshot: PiSnapshot) => TDocu
   "uae-v1": (snapshot) => buildIssuedDocumentV1(snapshot, "uae-v1"),
   "egypt-v2": (snapshot) => buildIssuedDocumentV2(snapshot, "egypt-v2"),
   "uae-v2": (snapshot) => buildIssuedDocumentV2(snapshot, "uae-v2"),
+  "egypt-v3": (snapshot) => buildIssuedDocumentV3(snapshot, "egypt-v3"),
+  "uae-v3": (snapshot) => buildIssuedDocumentV3(snapshot, "uae-v3"),
 };
 
 export function buildPiDefinition(snapshot: PiSnapshot): TDocumentDefinitions {

@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
+import { CommitmentOptions } from "../components/CommitmentOptions";
 import { ProductPiHistory } from "../components/ProductPiHistory";
 import { Banner, Button, Disclosure, Field, Menu, PageHeader, Select, TextArea, buttonClass, controlClass } from "../components/ui";
 import { errorText } from "../lib/errors";
@@ -9,7 +10,7 @@ import { can } from "../lib/permissions";
 import { numericInputValue } from "../lib/numeric-input";
 import { archiveRow } from "../lib/records";
 import { supabase } from "../lib/supabase";
-import type { CurrencyCode, Product, ProductCost, Vendor } from "../lib/types";
+import type { BillingType, CurrencyCode, Product, ProductCost, Vendor } from "../lib/types";
 import { recordOptionalSummary } from "../lib/workspace-view";
 
 function optionalPrice(value: string): string | null {
@@ -34,6 +35,7 @@ export function ProductDetailPage() {
   const [egp, setEgp] = useState("");
   const [usd, setUsd] = useState("");
   const [eur, setEur] = useState("");
+  const [billingType, setBillingType] = useState<BillingType>("one_time");
   const [purchasePrice, setPurchasePrice] = useState("");
   const [purchaseCurrency, setPurchaseCurrency] = useState<CurrencyCode | "">("");
   const [archivedAt, setArchivedAt] = useState<string | null>(null);
@@ -74,6 +76,7 @@ export function ProductDetailPage() {
       setEgp(numericInputValue(product.sell_price_egp));
       setUsd(numericInputValue(product.sell_price_usd));
       setEur(numericInputValue(product.sell_price_eur));
+      setBillingType(product.billing_type ?? "one_time");
       setArchivedAt(product.archived_at);
       setFound(true);
       if (seeCost) {
@@ -108,6 +111,7 @@ export function ProductDetailPage() {
         sell_price_egp: optionalPrice(egp),
         sell_price_usd: optionalPrice(usd),
         sell_price_eur: optionalPrice(eur),
+        billing_type: billingType,
       };
       let productId = id;
       if (!productId) {
@@ -194,6 +198,12 @@ export function ProductDetailPage() {
                 {vendors.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.company_name}</option>)}
               </Select>
             </Field>
+            <Field label="Billing" hint="Existing products stay one-time until this is changed. Subscription prices are the commitment options below, not a conversion of these selling prices.">
+              <Select disabled={!manage} value={billingType} onChange={(event) => setBillingType(event.target.value as BillingType)}>
+                <option value="one_time">One-time</option>
+                <option value="subscription">Subscription</option>
+              </Select>
+            </Field>
             <Field label="Unit" hint="For example unit, set, license, or service.">
               <input className={controlClass} list="units" disabled={!manage} value={unit} onChange={(event) => setUnit(event.target.value)} />
               <datalist id="units"><option value="unit" /><option value="set" /><option value="license" /><option value="service" /></datalist>
@@ -237,6 +247,7 @@ export function ProductDetailPage() {
           </div>
         </section>
       </form>
+      {id && found && billingType === "subscription" ? <CommitmentOptions productId={id} canManage={manage} /> : null}
       {id && found ? <ProductPiHistory key={id} productId={id} refreshKey={historyRefresh} /> : null}
     </div>
   );

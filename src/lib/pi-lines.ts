@@ -1,6 +1,7 @@
 import { modelsMatch } from "./model-identity";
 import { numericInputValue } from "./numeric-input";
-import type { CurrencyCode, DraftLineInput, PiLine } from "./types";
+import { commitmentCustomerText, lineSubscriptionFromAgreement, type LineSubscription } from "./subscription";
+import type { BillingType, CurrencyCode, DraftLineInput, PiLine, ProductCommitmentOption } from "./types";
 import { sellingPriceForCurrency } from "./types";
 
 export type SelectedProduct = {
@@ -9,6 +10,7 @@ export type SelectedProduct = {
   vendorId: string;
   vendorName: string;
   vendorArchived: boolean;
+  billingType: BillingType;
 };
 
 export type EditorLine = {
@@ -19,6 +21,8 @@ export type EditorLine = {
   unit: string;
   quantity: string;
   unitPrice: string;
+  /** Null for a one-time line, and for a subscription line whose commitment is not chosen yet. */
+  subscription: LineSubscription | null;
   /** A stored draft line that is not tied to a matching catalogue product. */
   legacyUnresolved: boolean;
 };
@@ -33,6 +37,7 @@ export type CatalogueChoice = {
   unit: string;
   /** Null when this currency has no default. "0" is an explicit zero. */
   unit_price: string | null;
+  billing_type?: BillingType;
 };
 
 export type StoredProductLink = {
@@ -41,6 +46,7 @@ export type StoredProductLink = {
   vendor_id: string;
   vendor_name: string;
   vendor_archived: boolean;
+  billing_type?: BillingType;
 };
 
 export function blankLine(key: string = crypto.randomUUID()): EditorLine {
@@ -52,6 +58,7 @@ export function blankLine(key: string = crypto.randomUUID()): EditorLine {
     unit: "unit",
     quantity: "1",
     unitPrice: "",
+    subscription: null,
     legacyUnresolved: false,
   };
 }
@@ -78,6 +85,7 @@ export function isResolvedLine(line: EditorLine): boolean {
 }
 
 export function selectProduct(line: EditorLine, choice: CatalogueChoice): EditorLine {
+  const billingType = choice.billing_type ?? "one_time";
   return {
     ...line,
     product: {
@@ -86,13 +94,49 @@ export function selectProduct(line: EditorLine, choice: CatalogueChoice): Editor
       vendorId: choice.vendor_id,
       vendorName: choice.vendor_name,
       vendorArchived: choice.vendor_archived,
+      billingType,
     },
     modelInput: choice.model_code,
     description: choice.description,
     unit: choice.unit.trim() || "unit",
-    unitPrice: choice.unit_price ?? "",
+    unitPrice: billingType === "subscription" ? "" : (choice.unit_price ?? ""),
+    subscription: null,
     legacyUnresolved: false,
   };
+}
+
+export function applyCommitment(line: EditorLine, option: ProductCommitmentOption): EditorLine {
+  const first = numericInputValue(option.first_year_unit_price);
+  const later = option.later_year_base_unit_price == null ? null : numericInputValue(option.later_year_base_unit_price);
+  const same = line.subscription?.optionId === option.id ? line.subscription : null;
+  const subscription: LineSubscription = {
+    obligationId: same?.obligationId ?? line.subscription?.obligationId ?? crypto.randomUUID(),
+    optionId: option.id,
+    commitmentYears: same?.commitmentYears ?? option.commitment_years,
+    currency: same?.currency ?? option.currency,
+    catalogueFirstYearUnitPrice: same?.catalogueFirstYearUnitPrice ?? first,
+    laterYearRule: same?.laterYearRule ?? option.later_year_rule,
+    laterYearBaseUnitPrice: same ? same.laterYearBaseUnitPrice : later,
+    catalogueLaterYearBaseUnitPrice: same ? same.catalogueLaterYearBaseUnitPrice : later,
+    customerText: "",
+  };
+  const yearOne = same && line.unitPrice.trim() ? line.unitPrice : first;
+  subscription.customerText = commitmentCustomerText({
+    currency: option.currency,
+    commitmentYears: option.commitment_years,
+    currentYearUnitPrice: yearOne || "0",
+    laterYearRule: subscription.laterYearRule,
+    laterYearBaseUnitPrice: subscription.laterYearBaseUnitPrice,
+  });
+  return {
+    ...line,
+    unitPrice: yearOne,
+    subscription,
+  };
+}
+
+export function clearCommitment(line: EditorLine): EditorLine {
+  return { ...line, subscription: null, unitPrice: line.product?.billingType === "subscription" ? "" : line.unitPrice };
 }
 
 export function revertModelInput(line: EditorLine): EditorLine {
@@ -118,6 +162,7 @@ export function editorLineFromStored(line: PiLine, product: StoredProductLink | 
       ...shared,
       product: null,
       modelInput: line.model_code,
+      subscription: lineSubscriptionFromAgreement(line.subscription_agreement),
       legacyUnresolved: true,
     };
   }
@@ -129,8 +174,10 @@ export function editorLineFromStored(line: PiLine, product: StoredProductLink | 
       vendorId: product.vendor_id,
       vendorName: product.vendor_name,
       vendorArchived: product.vendor_archived,
+      billingType: product.billing_type ?? "one_time",
     },
     modelInput: product.model_code,
+    subscription: lineSubscriptionFromAgreement(line.subscription_agreement),
     legacyUnresolved: false,
   };
 }
@@ -176,6 +223,14 @@ export function linesForDraft(lines: EditorLine[]): { ok: true; lines: DraftLine
       unit: line.unit.trim() || "unit",
       quantity: line.quantity,
       unit_price: line.unitPrice.trim() ? line.unitPrice.trim() : null,
+      subscription: line.subscription
+        ? {
+          option_id: line.subscription.optionId,
+          obligation_id: line.subscription.obligationId,
+          negotiated_first_year_unit_price: line.unitPrice.trim() || null,
+          later_year_base_unit_price: line.subscription.laterYearBaseUnitPrice,
+        }
+        : null,
     })),
   };
 }
@@ -186,6 +241,15 @@ export function generationBlock(lines: EditorLine[]): string | null {
     return prepared.message.replace("before saving", "before generating");
   }
   if (prepared.lines.length === 0) return "Add at least one item before generating.";
+  for (const line of lines) {
+    if (!isResolvedLine(line) || !line.product) continue;
+    if (line.product.billingType === "subscription" && !line.subscription) {
+      return `Select a commitment for ${line.product.modelCode} before generating. Year 1 is the only charge on this PI.`;
+    }
+    if (line.product.billingType === "one_time" && line.subscription) {
+      return `${line.product.modelCode} is a one-time product, but this line still has a subscription commitment. Remove the commitment or choose a subscription product. The saved terms were not replaced.`;
+    }
+  }
   const blocked = lines.filter(
     (line) => isResolvedLine(line) && (line.product?.vendorArchived || !line.product?.vendorName.trim()),
   );
@@ -211,6 +275,12 @@ export function lineWarning(line: EditorLine, canManageProducts: boolean): strin
     return canManageProducts
       ? `${model} has no active vendor, so this PI cannot be generated until you assign one on the product.`
       : `${model} has no active vendor. Ask a colleague who manages products to assign one before this PI can be generated.`;
+  }
+  if (line.product?.billingType === "one_time" && line.subscription) {
+    return `${line.product.modelCode} is a one-time product, but this line still has a subscription commitment. Remove the commitment before saving. The saved terms stay until you do.`;
+  }
+  if (line.product?.billingType === "subscription" && !line.subscription) {
+    return `Choose a commitment for ${line.product.modelCode}. Year 1 is the only charge included in this PI. Prices are not converted from another currency.`;
   }
   return null;
 }

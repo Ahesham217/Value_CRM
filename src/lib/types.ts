@@ -1,10 +1,12 @@
 import { numericInputValue } from "./numeric-input";
-import type { CanonicalPayment, PaymentSchedule } from "./payment-schedule";
+import type { CanonicalPayment, CanonicalPaymentRow, PaymentSchedule, ResidualTarget } from "./payment-schedule";
 
 export type PresetCode = "EG-EGP" | "AE-USD" | "AE-EUR";
 export type OfficeCode = "EG" | "AE";
 export type CurrencyCode = "EGP" | "USD" | "EUR";
 export type DiscountType = "none" | "fixed" | "percent";
+export type BillingType = "one_time" | "subscription";
+export type LaterYearRule = "fixed_annual" | "vendor_confirmed_base_adjustment";
 export type TrackingStatus = "draft" | "sent" | "accepted" | "cancelled";
 export type DisplayStatus = TrackingStatus | "issued";
 export type PiVisibility = "all" | "associated";
@@ -80,10 +82,24 @@ export type Product = {
   sell_price_egp: string | number | null;
   sell_price_usd: string | number | null;
   sell_price_eur: string | number | null;
+  billing_type: BillingType;
   archived_at: string | null;
   created_at: string;
   updated_at: string;
   vendors?: { company_name: string; archived_at?: string | null } | null;
+};
+
+export type ProductCommitmentOption = {
+  id: string;
+  product_id: string;
+  commitment_years: number;
+  currency: CurrencyCode;
+  first_year_unit_price: string | number;
+  later_year_base_unit_price: string | number | null;
+  later_year_rule: LaterYearRule | null;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type ProductCost = {
@@ -140,6 +156,67 @@ export type PiLine = {
   quantity: string | number;
   unit_price: string | number | null;
   line_total: string | number | null;
+  subscription_agreement: SubscriptionAgreement | null;
+};
+
+export type StoredAllocationLine = {
+  position: number;
+  billing_type: BillingType;
+  obligation_id: string | null;
+  product_id: string | null;
+  line_total: string;
+  discount: string;
+  discounted: string;
+  shipping: string;
+  installation: string;
+  bank_charge: string;
+  tax: string;
+  allocated_total: string;
+};
+
+export type SubscriptionObligation = {
+  id: string;
+  product_id: string | null;
+  position: number;
+  amount: string;
+  due_formula: string;
+};
+
+export type AllocatedCanonicalPayment = {
+  schema_version: 2;
+  currency: CurrencyCode;
+  grand_total: string;
+  subscription_total: string;
+  one_time_total: string;
+  customer_text: string;
+  presentation: "paragraph" | "table";
+  no_payment_due: boolean;
+  subscription_obligations: SubscriptionObligation[];
+  rows: CanonicalPaymentRow[];
+  allocation: {
+    residual_target: ResidualTarget | null;
+    residual_applied: boolean;
+    lines: StoredAllocationLine[];
+  };
+};
+
+export type SubscriptionAgreement = {
+  schema_version: 1;
+  option_id: string;
+  obligation_id: string;
+  product_id: string;
+  billing_type: "subscription";
+  commitment_years: number;
+  currency: CurrencyCode;
+  current_year: 1;
+  catalogue_first_year_unit_price: string;
+  negotiated_first_year_unit_price: string;
+  later_year_rule: LaterYearRule | null;
+  later_year_base_unit_price: string | null;
+  catalogue_later_year_base_unit_price: string | null;
+  adjustment_compounds: false;
+  payable_in_advance: true;
+  customer_text: string;
 };
 
 export type ProformaInvoice = {
@@ -221,10 +298,11 @@ export type SnapshotLine = {
   line_id?: string | null;
   product_id?: string | null;
   position?: number | null;
+  subscription?: (SubscriptionAgreement & { payment_allocation?: StoredAllocationLine | null }) | null;
 };
 
 export type PiSnapshot = {
-  layout_version: "egypt-v1" | "uae-v1" | "egypt-v2" | "uae-v2";
+  layout_version: "egypt-v1" | "uae-v1" | "egypt-v2" | "uae-v2" | "egypt-v3" | "uae-v3";
   preset_code: PresetCode;
   office: OfficeCode;
   currency: CurrencyCode;
@@ -300,7 +378,7 @@ export type PiSnapshot = {
     warranty: string;
     additional_notes: string;
   };
-  payment?: CanonicalPayment | null;
+  payment?: CanonicalPayment | AllocatedCanonicalPayment | null;
 };
 
 export type PiVersion = {
@@ -317,6 +395,13 @@ export type PiVersion = {
   grand_total: string;
 };
 
+export type DraftSubscriptionInput = {
+  option_id: string;
+  obligation_id: string | null;
+  negotiated_first_year_unit_price: string | null;
+  later_year_base_unit_price: string | null;
+};
+
 export type DraftLineInput = {
   product_id: string | null;
   vendor_id: string | null;
@@ -325,6 +410,7 @@ export type DraftLineInput = {
   unit: string;
   quantity: string;
   unit_price: string | null;
+  subscription?: DraftSubscriptionInput | null;
 };
 
 export type DraftPayload = {
