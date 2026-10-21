@@ -1,5 +1,6 @@
 import { PDFParse } from "pdf-parse";
 import { describe, expect, it } from "vitest";
+import { previewPaymentSchedule, type PaymentRow, type PaymentSchedule } from "./payment-schedule";
 import { buildPiDefinition, pdfFilename, renderPiPdf } from "./pdf";
 import type { PiSnapshot } from "./types";
 
@@ -92,6 +93,17 @@ function snapshot(overrides: Partial<PiSnapshot> = {}): PiSnapshot {
     },
   };
   return { ...base, ...overrides, company: { ...base.company, ...overrides.company }, bank: { ...base.bank, ...overrides.bank }, client: { ...base.client, ...overrides.client }, sales: { ...base.sales, ...overrides.sales }, adjustments: { ...base.adjustments, ...overrides.adjustments }, terms: { ...base.terms, ...overrides.terms }, lines: overrides.lines ?? base.lines };
+}
+
+function paymentRow(id: string, overrides: Partial<PaymentRow>): PaymentRow {
+  return {
+    id,
+    label: "",
+    amount: { type: "unset" },
+    due: { type: "unset" },
+    instalments: null,
+    ...overrides,
+  };
 }
 
 async function textOf(bytes: Uint8Array): Promise<{ text: string; pages: number }> {
@@ -509,8 +521,8 @@ describe("PI pdf", () => {
   });
 
   it("rejects an unsupported layout instead of using another one", async () => {
-    const issued = snapshot({ layout_version: "egypt-v2" as PiSnapshot["layout_version"] });
-    await expect(renderPiPdf(issued)).rejects.toThrow(/layout version "egypt-v2"/);
+    const issued = snapshot({ layout_version: "egypt-v9" as PiSnapshot["layout_version"] });
+    await expect(renderPiPdf(issued)).rejects.toThrow(/layout version "egypt-v9"/);
     await expect(renderPiPdf(issued)).rejects.toThrow(/No other layout was used/);
     await expect(renderPiPdf(issued)).rejects.toThrow(/cannot render/);
   });
@@ -537,6 +549,110 @@ describe("PI pdf", () => {
     expect(text).toContain("100.00");
     expect(text).not.toContain(lineId);
     expect(text).not.toContain(productId);
+  });
+
+  it("prints a structured payment agreement from the snapshot", async () => {
+    const agreement: PaymentSchedule = {
+      schema_version: 1,
+      no_payment_due: false,
+      dates_need_review: false,
+      rows: [
+        paymentRow("00000000-0000-4000-8000-000000000001", {
+          label: "advance payment",
+          amount: { type: "percent", percent: "30" },
+          due: { type: "on_event", event: { type: "standard", code: "order_confirmation" } },
+        }),
+        paymentRow("00000000-0000-4000-8000-000000000002", {
+          label: "before shipment",
+          amount: { type: "percent", percent: "15" },
+          due: { type: "before_shipment", deadline: null },
+        }),
+        paymentRow("00000000-0000-4000-8000-000000000003", {
+          label: "Remaining balance",
+          amount: { type: "remainder" },
+          instalments: {
+            count: 10,
+            frequency: "monthly",
+            first: { type: "after_event", event: { type: "standard", code: "delivery" }, offset: 1, unit: "months" },
+          },
+        }),
+      ],
+    };
+    const preview = previewPaymentSchedule(agreement, "USD", "100000.00");
+    const issued = snapshot({
+      layout_version: "uae-v2",
+      preset_code: "AE-USD",
+      office: "AE",
+      currency: "USD",
+      pi_number: "AE-2026-00008",
+      display_number: "AE-2026-00008",
+      adjustments: { ...snapshot().adjustments, grand_total: "100000.00", subtotal: "100000.00", net_items: "100000.00" },
+      terms: { ...snapshot().terms, payment_terms: preview.customerText ?? "" },
+      payment: preview.canonical,
+    });
+    const original = JSON.stringify(issued);
+    const { text } = await textOf(await renderPiPdf(issued));
+    const compact = text.replace(/\s+/g, " ");
+    expect(compact).toContain("30% advance payment upon order confirmation");
+    expect(compact).toContain("15% before shipment");
+    expect(compact).toContain("10 monthly instalments");
+    expect(compact).toContain("one calendar month after delivery");
+    expect(text).toContain("Contact person");
+    expect(text).toContain("Hana Saleh");
+    expect(text).toContain("To");
+    expect(text).toContain("the above information is true");
+    expect(text).not.toContain("Prepared by");
+    expect(text).not.toContain("Karim Nabil");
+    expect(text).not.toContain("Awaiting");
+    expect(text).not.toContain("Deadline to be set");
+    expect(text).not.toContain("00000000-0000-4000-8000");
+    expect(text).not.toContain("order_confirmation");
+    expect(JSON.stringify(issued)).toBe(original);
+    const currentCatalogue = "CURRENT-CATALOGUE-PRICE";
+    expect(text).not.toContain(currentCatalogue);
+  });
+
+  it("keeps a long structured schedule readable across pages", async () => {
+    const rows = Array.from({ length: 8 }, (_, index) => paymentRow(`00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`, {
+      label: `Stage ${index + 1} retention holdback for commissioning`,
+      amount: { type: "fixed", amount: "2500.00" },
+      instalments: {
+        count: 3,
+        frequency: "monthly",
+        first: { type: "date", date: "2026-12-01" },
+      },
+    }));
+    const preview = previewPaymentSchedule({ schema_version: 1, no_payment_due: false, dates_need_review: false, rows }, "EGP", "20000.00");
+    expect(preview.presentation).toBe("table");
+    const issued = snapshot({
+      layout_version: "egypt-v2",
+      lines: Array.from({ length: 12 }, (_, index) => ({
+        model_code: `VT-${index + 1}`,
+        description: `Long catalogue description ${index + 1} that keeps the item table from collapsing the payment schedule onto the first page.`,
+        unit: "unit",
+        quantity: "1",
+        unit_price: "10.00",
+        line_total: "10.00",
+      })),
+      terms: { ...snapshot().terms, payment_terms: preview.customerText ?? "" },
+      payment: preview.canonical,
+    });
+    const { text, pages } = await textOf(await renderPiPdf(issued));
+    expect(pages).toBeGreaterThan(1);
+    expect(text).toContain("Payment schedule");
+    expect(text).toContain("Stage 1 retention holdback");
+    expect(text).toContain("Stage 8 retention holdback");
+    expect(text).toContain("Commercial International Bank (CIB)");
+    expect(text).toContain("Page 1 of");
+    expect(text).not.toContain("00000000-0000-4000-8000");
+    expect(text).not.toContain("Awaiting");
+  });
+
+  it("still renders legacy payment text on v1 and refuses a v2 snapshot without a payment agreement", async () => {
+    const legacy = await textOf(await renderPiPdf(snapshot()));
+    expect(legacy.text).toContain("100% in advance");
+    const broken = snapshot({ layout_version: "egypt-v2" });
+    await expect(renderPiPdf(broken)).rejects.toThrow(/payment schedule/);
   });
 
   it("reports a snapshot that is missing saved rendering data", async () => {

@@ -1,4 +1,5 @@
 import { numericInputValue } from "./numeric-input";
+import type { CanonicalPayment, PaymentSchedule } from "./payment-schedule";
 
 export type PresetCode = "EG-EGP" | "AE-USD" | "AE-EUR";
 export type OfficeCode = "EG" | "AE";
@@ -174,6 +175,7 @@ export type ProformaInvoice = {
   tax_excludes_bank_charge: boolean;
   price_basis: string;
   payment_terms: string;
+  payment_schedule: PaymentSchedule | null;
   delivery_terms: string;
   warranty: string;
   additional_notes: string;
@@ -222,7 +224,7 @@ export type SnapshotLine = {
 };
 
 export type PiSnapshot = {
-  layout_version: "egypt-v1" | "uae-v1";
+  layout_version: "egypt-v1" | "uae-v1" | "egypt-v2" | "uae-v2";
   preset_code: PresetCode;
   office: OfficeCode;
   currency: CurrencyCode;
@@ -298,6 +300,7 @@ export type PiSnapshot = {
     warranty: string;
     additional_notes: string;
   };
+  payment?: CanonicalPayment | null;
 };
 
 export type PiVersion = {
@@ -348,6 +351,7 @@ export type DraftPayload = {
   tax_excludes_bank_charge: boolean;
   price_basis: string;
   payment_terms: string;
+  payment_schedule: PaymentSchedule | null;
   delivery_terms: string;
   warranty: string;
   additional_notes: string;

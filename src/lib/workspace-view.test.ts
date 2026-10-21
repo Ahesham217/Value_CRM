@@ -43,6 +43,8 @@ function snapshot(overrides: Partial<EditorSnapshot> = {}): EditorSnapshot {
     taxExcludesBank: false,
     priceBasis: "",
     paymentTerms: "Advance",
+    paymentMode: "legacy",
+    paymentSchedule: null,
     deliveryTerms: "4 weeks",
     warranty: "",
     notes: "",
