@@ -109,7 +109,7 @@ Order:
 
 Do not roll the frontend back after a receipt or subscription exists if you also remove the SQL. The previous screen simply will not show the records. Dropping the new tables deletes receipt and subscription history and cannot be reconstructed from issued PDFs. Issued snapshots are not changed by tracking, receipts, reversals, or activation. If no plan has been started, the new tables and columns can be dropped and `private.has_flag` restored from `20261021193000_subscription_commitments.sql`'s predecessor definition in `20261018120100_functions.sql`, plus any flags added since. Do not delete invoices, products, users, or snapshots, and do not reset numbering counters.
 
-`supabase/tests/payment_tracking_concurrent.sh` commits rows. Run it only on a disposable database, never on Value CRM.
+`supabase/tests/payment_tracking_concurrent.sh` and `supabase/tests/payment_tracking_lock_order.sh` commit rows. Run them only on a disposable database, never on Value CRM.
 
 `20261018120300_egypt_logo.sql` stores the logo extracted from `reference-templates/Egypt Template.xlsx`. The UAE workbooks do not contain a logo. If Settings shows no Egypt logo, run that file once in the SQL editor.
 
