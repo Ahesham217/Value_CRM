@@ -6,7 +6,7 @@ import {
   allocationSum,
   cairoToday,
   collectionLabel,
-  completionReceivedOn,
+  pendingActivationDate,
   dueScheduleLabel,
   methodLabel,
   suggestAllocation,
@@ -218,12 +218,13 @@ export function PaymentTrackingSection({
             amount: String(item.amount),
           }];
         });
-      const added = allocationAmounts[obligation.id]?.trim();
-      if (!added) return [];
-      const start = completionReceivedOn([
-        ...existing,
-        { id: "new", receivedOn, recordedAt: "9999-12-31T00:00:00Z", amount: added },
-      ], String(obligation.amount));
+      const added = allocationAmounts[obligation.id] ?? "";
+      const start = pendingActivationDate({
+        existing,
+        pendingAmount: added,
+        required: String(obligation.amount),
+        receivedOn,
+      });
       if (!start) return [];
       const subscription = subscriptions.find((item) => item.source_obligation_id === obligation.subscription_obligation_id);
       if (subscription) return [];

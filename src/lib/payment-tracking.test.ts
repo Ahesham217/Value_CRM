@@ -5,6 +5,7 @@ import {
   commitmentPeriods,
   completionReceivedOn,
   nextCommittedPaymentDate,
+  pendingActivationDate,
   suggestAllocation,
   validateAllocation,
   dueScheduleLabel,
@@ -98,6 +99,50 @@ describe("subscription completion date", () => {
     expect(completionReceivedOn([
       { id: "partial", receivedOn: "2026-10-01", recordedAt: "2026-10-01T09:00:00Z", amount: "1000.00" },
     ], "1950.00")).toBeNull();
+  });
+});
+
+describe("activation preview before a receipt is posted", () => {
+  const partial = [{ id: "first", receivedOn: "2026-11-01", recordedAt: "2026-11-02T00:00:00Z", amount: "1000.00" }];
+  const rejected = [".", "", "   ", "1.", "abc", "-5", "1.001", "0", "0.00"];
+
+  it.each(rejected)("does not throw or preview an activation for %j", (pendingAmount) => {
+    expect(pendingActivationDate({
+      existing: partial,
+      pendingAmount,
+      required: "1950.00",
+      receivedOn: "2026-11-15",
+    })).toBeNull();
+  });
+
+  it("keeps a valid partial payment from activating", () => {
+    expect(pendingActivationDate({
+      existing: [],
+      pendingAmount: "1000.00",
+      required: "1950.00",
+      receivedOn: "2026-11-01",
+    })).toBeNull();
+  });
+
+  it("uses the received date that completes a valid payment", () => {
+    expect(pendingActivationDate({
+      existing: partial,
+      pendingAmount: "950",
+      required: "1950.00",
+      receivedOn: "2026-11-15",
+    })).toBe("2026-11-15");
+    expect(pendingActivationDate({
+      existing: [],
+      pendingAmount: "1950.00",
+      required: "1950.00",
+      receivedOn: "2026-11-15",
+    })).toBe("2026-11-15");
+    expect(pendingActivationDate({
+      existing: [{ id: "later", receivedOn: "2026-11-15", recordedAt: "2026-11-20T00:00:00Z", amount: "1000.00" }],
+      pendingAmount: "950.00",
+      required: "1950.00",
+      receivedOn: "2026-11-01",
+    })).toBe("2026-11-15");
   });
 });
 

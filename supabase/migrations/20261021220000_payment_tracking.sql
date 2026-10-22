@@ -1241,6 +1241,33 @@ begin
 end;
 $$;
 
+-- Recording, reversal, and no-charge activation all take this lock first:
+-- the payment plan, then every obligation on that plan in id order.
+create or replace function private.lock_payment_plan(p_plan_id uuid)
+returns public.payment_plans
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_plan public.payment_plans;
+begin
+  select * into v_plan
+  from public.payment_plans
+  where id = p_plan_id
+  for update;
+  if not found then
+    return null;
+  end if;
+  perform 1
+  from public.payment_obligations
+  where plan_id = p_plan_id
+  order by id
+  for update;
+  return v_plan;
+end;
+$$;
+
 create or replace function private.record_payment_receipt(p_plan_id uuid, p_payload jsonb)
 returns jsonb
 language plpgsql
@@ -1280,12 +1307,11 @@ begin
     raise exception 'The payment could not be read.';
   end if;
 
-  select * into v_plan from public.payment_plans where id = p_plan_id for update;
-  if not found or not private.can_read_pi(v_plan.pi_id) then
+  v_plan := private.lock_payment_plan(p_plan_id);
+  if v_plan.id is null or not private.can_read_pi(v_plan.pi_id) then
     raise exception 'This payment plan was not found, or you do not have access to it.';
   end if;
   perform private.require_pi_reader(v_plan.pi_id);
-  perform 1 from public.payment_obligations where plan_id = v_plan.id order by id for update;
 
   begin
     v_key := private.as_uuid(p_payload ->> 'idempotency_key');
@@ -1459,6 +1485,7 @@ as $$
 declare
   v_receipt public.payment_receipts;
   v_plan public.payment_plans;
+  v_plan_id uuid;
   v_reason text;
   v_reviews jsonb;
 begin
@@ -1468,20 +1495,16 @@ begin
   if not private.has_flag('can_reverse_payments') then
     raise exception 'You do not have permission to reverse payments.';
   end if;
-  select * into v_receipt from public.payment_receipts where id = p_receipt_id for update;
-  if found then
-    select * into v_plan from public.payment_plans where id = v_receipt.plan_id for update;
+  select plan_id into v_plan_id from public.payment_receipts where id = p_receipt_id;
+  if v_plan_id is null then
+    raise exception 'This receipt was not found, or you do not have access to it.';
   end if;
-  if not found or not private.can_read_pi(v_plan.pi_id) then
+  v_plan := private.lock_payment_plan(v_plan_id);
+  select * into v_receipt from public.payment_receipts where id = p_receipt_id for update;
+  if v_plan.id is null or not found or not private.can_read_pi(v_plan.pi_id) then
     raise exception 'This receipt was not found, or you do not have access to it.';
   end if;
   perform private.require_pi_reader(v_plan.pi_id);
-  perform 1
-  from public.payment_obligations o
-  where o.plan_id = v_plan.id
-    and o.id in (select obligation_id from public.payment_allocations where receipt_id = v_receipt.id)
-  order by o.id
-  for update;
 
   if v_receipt.reversed_at is not null then
     return jsonb_build_object(
@@ -1541,6 +1564,7 @@ as $$
 declare
   v_obligation public.payment_obligations;
   v_plan public.payment_plans;
+  v_plan_id uuid;
   v_existing uuid;
   v_reason text;
   v_id uuid;
@@ -1552,11 +1576,15 @@ begin
   if not private.has_flag('can_activate_zero_subscriptions') then
     raise exception 'You do not have permission to activate a zero-value subscription.';
   end if;
-  select * into v_obligation from public.payment_obligations where id = p_obligation_id for update;
-  if found then
-    select * into v_plan from public.payment_plans where id = v_obligation.plan_id for update;
+  select plan_id into v_plan_id from public.payment_obligations where id = p_obligation_id;
+  if v_plan_id is null then
+    raise exception 'This subscription obligation was not found, or you do not have access to it.';
   end if;
-  if not found or not private.can_read_pi(v_plan.pi_id) then
+  v_plan := private.lock_payment_plan(v_plan_id);
+  select * into v_obligation
+  from public.payment_obligations
+  where id = p_obligation_id and plan_id = v_plan.id;
+  if v_plan.id is null or not found or not private.can_read_pi(v_plan.pi_id) then
     raise exception 'This subscription obligation was not found, or you do not have access to it.';
   end if;
   perform private.require_pi_reader(v_plan.pi_id);
@@ -1795,6 +1823,7 @@ revoke all on function private.flag_subscription_review(uuid) from public, anon,
 revoke all on function private.normalize_allocations(jsonb) from public, anon, authenticated;
 revoke all on function private.receipt_allocations_json(uuid) from public, anon, authenticated;
 revoke all on function private.start_payment_tracking(uuid, uuid, boolean) from public, anon, authenticated;
+revoke all on function private.lock_payment_plan(uuid) from public, anon, authenticated;
 revoke all on function private.record_payment_receipt(uuid, jsonb) from public, anon, authenticated;
 revoke all on function private.reverse_payment_receipt(uuid, text) from public, anon, authenticated;
 revoke all on function private.activate_subscription_at_no_charge(uuid, date, text) from public, anon, authenticated;

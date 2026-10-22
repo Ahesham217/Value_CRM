@@ -64,6 +64,37 @@ export function nextCommittedPaymentDate(start: string, years: number, today: st
   return next;
 }
 
+/**
+ * Preview the activation date for a typed allocation.
+ * Blank, incomplete, invalid, negative, and overly precise amounts return null
+ * and are not treated as money. Recording still uses validateAllocation.
+ */
+export function pendingActivationDate(input: {
+  existing: DatedAmount[];
+  pendingAmount: string;
+  required: string;
+  receivedOn: string;
+}): string | null {
+  const pending = moneyAmount(input.pendingAmount);
+  const required = moneyAmount(input.required);
+  if (pending == null || pending.lte(0) || required == null || required.lte(0)) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.receivedOn) || parseIsoDate(input.receivedOn) == null) return null;
+  const existing = input.existing.flatMap((entry) => {
+    const amount = moneyAmount(entry.amount);
+    if (amount == null || amount.lte(0)) return [];
+    return [{ ...entry, amount: amount.toFixed(2) }];
+  });
+  return completionReceivedOn([
+    ...existing,
+    {
+      id: "new",
+      receivedOn: input.receivedOn,
+      recordedAt: "9999-12-31T00:00:00Z",
+      amount: pending.toFixed(2),
+    },
+  ], required.toFixed(2));
+}
+
 export function completionReceivedOn(entries: DatedAmount[], required: string): string | null {
   const need = new Decimal(required);
   if (need.lte(0)) return null;
