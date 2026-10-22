@@ -43,6 +43,9 @@ export function PaymentScheduleSection({
   allocationNote = null,
   customerText = null,
   conversionMessage = null,
+  conversionRemoveLabels = [],
+  conversionRetainLabels = [],
+  conversionConfirmLabel = "Confirm allocation update",
   onConvert,
   residualRequired = false,
   allocationIssues = null,
@@ -63,6 +66,9 @@ export function PaymentScheduleSection({
   allocationNote?: string | null;
   customerText?: string | null;
   conversionMessage?: string | null;
+  conversionRemoveLabels?: string[];
+  conversionRetainLabels?: string[];
+  conversionConfirmLabel?: string;
   onConvert?: () => void;
   residualRequired?: boolean;
   /** Schema version 2 issues from the allocation preview. Null when that preview has not been run. */
@@ -120,11 +126,13 @@ export function PaymentScheduleSection({
         })),
       }
       : rawPreview;
-  const issues: ScheduleIssue[] = usingAllocation && allocationIssues != null
-    ? allocationIssues
-    : subscriptionCoversTotal
-      ? (schedule.rows.length > 0 ? [{ rowId: null, message: NO_ONE_TIME_AMOUNT_MESSAGE }] : [])
-      : (preview?.issues ?? []);
+  const issues: ScheduleIssue[] = conversionMessage
+    ? []
+    : usingAllocation && allocationIssues != null
+      ? allocationIssues
+      : subscriptionCoversTotal
+        ? (schedule.rows.length > 0 ? [{ rowId: null, message: NO_ONE_TIME_AMOUNT_MESSAGE }] : [])
+        : (preview?.issues ?? []);
   const summaryText = customerText ?? preview?.customerText ?? null;
   const remainderUsed = schedule.rows.some((row) => row.amount.type === "remainder");
   const update = (next: PaymentSchedule) => onSchedule({
@@ -158,6 +166,8 @@ export function PaymentScheduleSection({
         <h3 className="text-[15px] font-semibold text-ink">Payment schedule</h3>
         {summaryText ? (
           <p className="text-sm text-slate-600">{summaryText}</p>
+        ) : conversionMessage ? (
+          <p className="text-sm text-slate-600">The current subscription charge is payable 100% in advance.</p>
         ) : (
           <p className="text-sm text-slate-600">
             {schedule.rows.length === 0 ? "No payments yet." : `${schedule.rows.length} ${schedule.rows.length === 1 ? "payment" : "payments"}`}
@@ -168,8 +178,14 @@ export function PaymentScheduleSection({
         <div className="mt-3">
           <Banner tone="info">
             {conversionMessage}
+            {conversionRemoveLabels.length > 0 ? (
+              <p className="mt-2">Rows that will be removed: {conversionRemoveLabels.join(", ")}.</p>
+            ) : null}
+            {conversionRetainLabels.length > 0 ? (
+              <p className="mt-2">Rows that will be kept for the one-time amount: {conversionRetainLabels.join(", ")}.</p>
+            ) : null}
             {canEdit && onConvert ? (
-              <button type="button" className="ml-2 underline" onClick={onConvert}>Update payment allocation</button>
+              <button type="button" className="ml-2 underline" onClick={onConvert}>{conversionConfirmLabel}</button>
             ) : null}
           </Banner>
         </div>
@@ -216,9 +232,9 @@ export function PaymentScheduleSection({
         </div>
       ) : null}
       {oneTimeIsZero ? (
-        <p className="mt-3 text-sm text-slate-700">The current charge is payable 100% in advance. There is no one-time amount to split into instalments.</p>
+        <p className="mt-3 text-sm text-slate-700">This PI's current charge is payable 100% in advance. A separate 100% payment row is not required.</p>
       ) : null}
-      {!schedule.no_payment_due && !oneTimeIsZero && schedule.rows.length === 0 && canEdit ? (
+      {!schedule.no_payment_due && !oneTimeIsZero && !conversionMessage && schedule.rows.length === 0 && canEdit ? (
         <div className="mt-3 flex flex-wrap gap-2">
           <Button type="button" variant="secondary" onClick={() => update(fullAdvanceTemplate())}>100% on confirmation</Button>
           <Button type="button" variant="secondary" onClick={() => update(advanceThenShipmentTemplate())}>30% / 70% before shipment</Button>
@@ -242,6 +258,7 @@ export function PaymentScheduleSection({
                 instalments={rowPreview?.instalments ?? null}
                 canEdit={canEdit}
                 remainderUsed={remainderUsed}
+                percentageHint={usingAllocation ? "Percentages use the one-time amount, not the whole PI." : "Percentages use the PI grand total."}
                 onChange={(patch) => updateRow(row.id, patch)}
                 onMove={(direction) => move(index, direction)}
                 onRemove={() => update({ ...schedule, rows: schedule.rows.filter((item) => item.id !== row.id) })}
@@ -303,6 +320,7 @@ function PaymentRowEditor({
   instalments,
   canEdit,
   remainderUsed,
+  percentageHint,
   onChange,
   onMove,
   onRemove,
@@ -317,6 +335,7 @@ function PaymentRowEditor({
   instalments: { sequence: number; amount: string; due_date: string | null; due_formula: string }[] | null;
   canEdit: boolean;
   remainderUsed: boolean;
+  percentageHint: string;
   onChange: (patch: Partial<PaymentRow>) => void;
   onMove: (direction: -1 | 1) => void;
   onRemove: () => void;
@@ -338,7 +357,7 @@ function PaymentRowEditor({
         <Field label="Label">
           <input className={controlClass} disabled={!canEdit} value={row.label} placeholder="Advance payment" onChange={(event) => onChange({ label: event.target.value })} />
         </Field>
-        <AmountFields row={row} canEdit={canEdit} remainderUsed={remainderUsed} onChange={onChange} />
+        <AmountFields row={row} canEdit={canEdit} remainderUsed={remainderUsed} percentageHint={percentageHint} onChange={onChange} />
       </div>
       <label className="mt-3 flex items-center gap-2 text-sm">
         <input
@@ -375,16 +394,18 @@ function AmountFields({
   row,
   canEdit,
   remainderUsed,
+  percentageHint,
   onChange,
 }: {
   row: PaymentRow;
   canEdit: boolean;
   remainderUsed: boolean;
+  percentageHint: string;
   onChange: (patch: Partial<PaymentRow>) => void;
 }) {
   return (
     <div className="grid gap-3">
-      <Field label="Amount" hint="Percentages use the PI grand total.">
+      <Field label="Amount" hint={percentageHint}>
         <Select disabled={!canEdit} value={row.amount.type} onChange={(event) => onChange({ amount: amountFromType(event.target.value, row.amount) })}>
           <option value="unset">Choose</option>
           <option value="percent">Percentage of total</option>

@@ -25,6 +25,9 @@ export type Profile = {
   can_manage_vendors: boolean;
   can_manage_products: boolean;
   can_view_purchase_prices: boolean;
+  can_manage_payments: boolean;
+  can_reverse_payments: boolean;
+  can_activate_zero_subscriptions: boolean;
 };
 
 export type Client = {

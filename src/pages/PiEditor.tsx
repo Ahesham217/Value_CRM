@@ -11,7 +11,7 @@ import { errorText, isConflict } from "../lib/errors";
 import { formatMoney } from "../lib/format";
 import { calculateDocument } from "../lib/money";
 import { emptyPaymentSchedule, issueList, previewPaymentSchedule, readPaymentSchedule, type PaymentSchedule } from "../lib/payment-schedule";
-import { commitmentCustomerText, convertScheduleToAllocation, previewAllocatedPayment, subscriptionScheduleMessage, type PortionLine } from "../lib/subscription";
+import { adjustScheduleForSubscriptionSelection, applySubscriptionConversion, commitmentCustomerText, previewAllocatedPayment, subscriptionConversionPlan, type PortionLine } from "../lib/subscription";
 import { numericInputValue } from "../lib/numeric-input";
 import { can } from "../lib/permissions";
 import { editorLineFromStored, generationBlock, isBlankPlaceholder, isResolvedLine, linesForDraft, type EditorLine } from "../lib/pi-lines";
@@ -267,10 +267,16 @@ export function PiEditorPage() {
 
   const paymentGrandTotal = totals.value && totals.value.unpricedCount === 0 ? totals.value.grandTotal : null;
   const hasSubscription = lines.some((line) => isResolvedLine(line) && line.product?.billingType === "subscription");
-  const needsConversion = hasSubscription && (paymentMode === "legacy" || paymentSchedule.schema_version !== 2);
-  const conversionMessage = needsConversion
-    ? subscriptionScheduleMessage(paymentMode === "legacy" ? "legacy" : "grand_total")
-    : null;
+  const resolvedLines = lines.filter((line) => isResolvedLine(line));
+  const subscriptionOnly = resolvedLines.length > 0 && resolvedLines.every((line) => line.product?.billingType === "subscription");
+  const conversion = subscriptionConversionPlan({
+    mode: paymentMode,
+    schedule: paymentSchedule,
+    hasSubscription,
+    subscriptionOnly,
+  });
+  const needsConversion = conversion != null;
+  const conversionMessage = conversion?.message ?? null;
   const portionLines: PortionLine[] = lines.map((line, index) => ({
     position: index + 1,
     billingType: line.product?.billingType === "subscription" ? "subscription" : "one_time",
@@ -935,7 +941,18 @@ export function PiEditorPage() {
         canEdit={canEdit}
         canManageProducts={can(profile, "can_manage_products")}
         totals={(totals.value?.lines ?? []).map((line) => line.lineTotal)}
-        onChange={setLines}
+        onChange={(nextLines) => {
+          const hadSubscription = lines.some((line) => isResolvedLine(line) && line.product?.billingType === "subscription");
+          const nextHasSubscription = nextLines.some((line) => isResolvedLine(line) && line.product?.billingType === "subscription");
+          const adjusted = adjustScheduleForSubscriptionSelection({
+            mode: paymentMode,
+            schedule: paymentSchedule,
+            hadSubscription,
+            hasSubscription: nextHasSubscription,
+          });
+          setLines(nextLines);
+          if (adjusted) setPaymentSchedule(adjusted);
+        }}
         onNotice={(text) => {
           setError(null);
           setMessage(text);
@@ -958,9 +975,12 @@ export function PiEditorPage() {
               allocationNote={needsConversion ? null : allocatedPreview?.explanation ?? null}
               customerText={paymentSchedule.schema_version === 2 ? allocatedPreview?.customerText ?? null : null}
               conversionMessage={conversionMessage}
+              conversionRemoveLabels={conversion?.removeLabels ?? []}
+              conversionRetainLabels={conversion?.retainLabels ?? []}
+              conversionConfirmLabel={conversion?.confirmLabel}
               onConvert={() => {
                 setPaymentMode("structured");
-                setPaymentSchedule(convertScheduleToAllocation(paymentMode === "legacy" ? null : paymentSchedule));
+                setPaymentSchedule(applySubscriptionConversion(paymentMode === "legacy" ? null : paymentSchedule, subscriptionOnly));
               }}
               residualRequired={allocatedPreview?.allocation?.residualRequired ?? false}
               allocationIssues={paymentSchedule.schema_version === 2 ? (allocatedPreview?.issues ?? null) : null}
