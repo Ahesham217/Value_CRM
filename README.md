@@ -47,7 +47,7 @@ Never put the service-role or secret key in a `VITE_` variable, frontend source,
 
 ## Migrations
 
-SQL lives in `supabase/migrations` and is the reproducible schema. Older files have been applied to Value CRM. Do not run those again. The payment-tracking file is called out below and has not been applied.
+SQL lives in `supabase/migrations` and is the reproducible schema. Older files have been applied to Value CRM. Do not run those again. Payment tracking was applied to Value CRM on 22 October 2026 and is called out below. Do not run that file again.
 
 On a new database, run the files in filename order with the Supabase SQL editor or CLI:
 
@@ -77,7 +77,7 @@ The first migration installs `public.rls_auto_enable()` and the `ensure_rls` eve
 
 Checked on 2026-10-21, Value CRM already has the subscription commitment objects (`product_commitment_options`, `pi_lines.subscription_agreement`, and the allocation functions). `supabase_migrations.schema_migrations` does not list `20261021193000_subscription_commitments`. Do not run that file again unless a diff shows one of those objects is missing. It does not rewrite issued snapshots.
 
-`20261021220000_payment_tracking.sql` is in the repository and has **not** been applied. It adds payment plans, obligations, receipts, allocations, and subscription records. It does not rewrite snapshots, backfill receipts, or activate anything that already exists. New payment permissions default to false. See the rollout below.
+`20261021220000_payment_tracking.sql` was applied to Value CRM on 22 October 2026. The migration API recorded it as six parts, in order: `20261022164341 payment_tracking_schema`, `20261022164416 payment_tracking_immutability`, `20261022164522 payment_tracking_obligations`, `20261022164606 payment_tracking_activation_and_lock`, `20261022164649 payment_tracking_receipts`, and `20261022164716 payment_tracking_security`. Do not run the file or those parts again. It added payment plans, obligations, receipts, allocations, and subscription records. It did not rewrite issued snapshots, backfill receipts, or activate anything that already existed. The new payment permissions were left false on every existing profile. See the rollout below.
 
 The payment-schedule rollout has already happened. A structured draft cannot be saved back to a legacy paragraph. Omitting `payment_schedule` on a structured draft is rejected. A draft whose stored schedule is still null can stay a legacy paragraph. Do not set a structured schedule back to null from an old session.
 
@@ -96,16 +96,16 @@ Do not roll this frontend back after a commitment or a version 2 schedule has be
 
 ### Payment tracking
 
-Apply `20261021220000_payment_tracking.sql` only to Value CRM (`idhqrvrpzlkpyyqlkozl`). Do not apply it to Verifications or Value-Website. It was not applied by the change that added it.
+`20261021220000_payment_tracking.sql` was applied only to Value CRM (`idhqrvrpzlkpyyqlkozl`) on 22 October 2026. It was not applied to Verifications or Value-Website. Do not run it again.
 
-The migration is additive. It does not replace draft save, PI numbering, or snapshot generation, so a browser tab that is already open can keep editing a PI while the SQL is applied. It does add profile columns and replace `private.has_flag` with the same flags plus three new ones. Existing members stay without those write flags. Administrators already pass `has_flag`.
+The migration is additive. It does not replace draft save, PI numbering, or snapshot generation. It adds profile columns and replaces `private.has_flag` with the same flags plus three new ones. Existing members were left without those write flags. Administrators already pass `has_flag`.
 
-Order:
+What was released on 22 October 2026:
 
-1. Apply `20261021220000_payment_tracking.sql`.
-2. Deploy the `admin-users` function from this revision. Until that deploy, Settings cannot store the three new checkboxes. Saving a user from an older function does not clear the new columns, because that function does not send them. The function in this revision also leaves a payment flag unchanged when the caller omits it.
-3. Serve this frontend. Ask staff to reload. An old tab will not show Subscriptions or Record payment until it loads this build. It can still save a PI.
-4. An administrator grants “Manage payment tracking and record receipts”, “Reverse receipts”, and “Activate zero-value subscriptions” only to the people who should have them. Do not grant those write flags to every member.
+1. The payment-tracking SQL, recorded under the six migration names listed above. Issued snapshots were not changed, and the apply created no payment plans, receipts, or subscriptions.
+2. The existing `admin-users` function was updated from this revision. JWT verification stayed on. The function accepts `can_manage_payments`, `can_reverse_payments`, and `can_activate_zero_subscriptions`, and a missing permission on an update leaves the stored value as it is. No user was created or invited.
+3. The production frontend is this revision on `main`, published by the existing Cloudflare Workers Builds integration. After that build succeeds, staff should reload. An old tab will not show Subscriptions or Record payment until it loads this build. It can still save a PI.
+4. An administrator grants “Manage payment tracking and record receipts”, “Reverse receipts”, and “Activate zero-value subscriptions” in Settings → Users and permissions, only to the people who should have them. Do not grant those write flags to every member. They are not granted by this rollout.
 
 Do not roll the frontend back after a receipt or subscription exists if you also remove the SQL. The previous screen simply will not show the records. Dropping the new tables deletes receipt and subscription history and cannot be reconstructed from issued PDFs. Issued snapshots are not changed by tracking, receipts, reversals, or activation. If no plan has been started, the new tables and columns can be dropped and `private.has_flag` restored from `20261021193000_subscription_commitments.sql`'s predecessor definition in `20261018120100_functions.sql`, plus any flags added since. Do not delete invoices, products, users, or snapshots, and do not reset numbering counters.
 
