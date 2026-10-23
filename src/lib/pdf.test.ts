@@ -167,6 +167,72 @@ describe("PI pdf", () => {
     expect(text).not.toContain("supplier");
   });
 
+  it("prints a new office's saved company and bank on the chosen layout family", async () => {
+    const company = {
+      name: "North Office LLC",
+      address: "Doha\nQatar",
+      phone: "+974 4000 0000",
+      fax: "",
+      email: "accounts@north.example",
+      website: "",
+      tax_registration: "",
+      logo_base64: null,
+      logo_content_type: null,
+    };
+    const bank = {
+      bank_name: "Qatar National Bank",
+      branch: "Doha",
+      address: "",
+      swift: "QNBAQAQA",
+      account_name: "North Office LLC",
+      account_number: "000123",
+      iban: "QA00NORTH000123",
+      correspondent_bank: "",
+      notes: "",
+    };
+    const uae = snapshot({
+      layout_version: "uae-v1",
+      preset_code: "P-NORTHUSD",
+      office: "NX",
+      currency: "USD",
+      company,
+      bank,
+      pi_number: "NX-2026-00001",
+      display_number: "NX-2026-00001",
+    });
+    const egypt = snapshot({
+      layout_version: "egypt-v1",
+      preset_code: "P-NORTHEGP",
+      office: "NX",
+      currency: "EGP",
+      company,
+      bank,
+      pi_number: "NX-2026-00002",
+      display_number: "NX-2026-00002",
+    });
+    const uaeText = (await textOf(await renderPiPdf(uae))).text;
+    const egyptText = (await textOf(await renderPiPdf(egypt))).text;
+    for (const text of [uaeText, egyptText]) {
+      expect(text).toContain("North Office LLC");
+      expect(text).toContain("Qatar National Bank");
+      expect(text).toContain("000123");
+      expect(text).toContain("QA00NORTH000123");
+      expect(text).toContain("QNBAQAQA");
+      expect(text).toContain("Contact person");
+      expect(text).toContain("Hana Saleh");
+      expect(text).not.toContain("Value Technologies EMEA");
+      expect(text).not.toContain("Arab African International Bank");
+      expect(text).not.toContain("Commercial International Bank");
+      expect(text).not.toContain("Prepared by");
+      expect(text).not.toContain("Karim Nabil");
+    }
+    expect(uaeText).toContain("To");
+    expect(uaeText).toContain("the above information is true");
+    expect(egyptText).toContain("Client");
+    expect(egyptText).toContain("the information mentioned above");
+    expect(JSON.stringify(uae)).toContain("North Office LLC");
+  });
+
   it("uses the USD and EUR bank details and omits the VAT exclusion when tax is included", async () => {
     const usd = await textOf(
       await renderPiPdf(

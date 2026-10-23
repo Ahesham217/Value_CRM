@@ -128,6 +128,18 @@ describe("pi list filters", () => {
       { id: "dates", label: "Date: 1 Jan 2026 – 31 Jan 2026" },
     ]);
   });
+
+  it("labels a preset filter with the preset name", () => {
+    expect(piListFilterChips({
+      office: "P-NORTH",
+      officeName: "North Office — USD",
+      currency: "",
+      status: "",
+      salespersonName: "",
+      fromDate: "",
+      toDate: "",
+    })).toEqual([{ id: "office", label: "Office: North Office — USD" }]);
+  });
 });
 
 describe("optional PI values stay visible", () => {

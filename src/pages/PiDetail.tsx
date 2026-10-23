@@ -243,7 +243,7 @@ export function PiDetailPage() {
         <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
           <div><dt className="text-xs text-slate-500">PI date</dt><dd>{formatDate(pi.pi_date)}</dd></div>
           <div><dt className="text-xs text-slate-500">Expiry date</dt><dd>{formatDate(pi.expiry_date)}</dd></div>
-          <div><dt className="text-xs text-slate-500">Office</dt><dd>{officeLabel(listRow?.office ?? pi.office)}</dd></div>
+          <div><dt className="text-xs text-slate-500">Office</dt><dd>{listRow?.preset_display_name || officeLabel(listRow?.office ?? pi.office)}</dd></div>
           <div><dt className="text-xs text-slate-500">Currency and total</dt><dd className="font-medium tabular-nums">{formatMoney(grandTotal, currency)}</dd></div>
           <div><dt className="text-xs text-slate-500">Lead salesperson</dt><dd>{listRow?.lead_name || latest?.snapshot.sales.lead_name || "—"}</dd></div>
           <div>

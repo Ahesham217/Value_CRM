@@ -20,7 +20,7 @@ Historical decision dates are **unknown** where the repository shows the impleme
 
 - Decision date: unknown
 - Documented: 2026-10-19
-- Status: Implemented
+- Status: Superseded by [DEC-020](#dec-020)
 - Decision: Offer exactly three company presets: Egypt — EGP, UAE — USD, and UAE — EUR.
 - Reason: Those are the offices and currencies on the reference workbooks. Office and currency are fixed identity, not records staff can add or remove.
 - Consequences or limitations: A PI uses one preset. There is no currency conversion. UAE USD and UAE EUR share the UAE legal entity and use different bank accounts. A bank charge is optional on each PI; the workbook instruction to add a fixed 72 USD or 72 EUR charge is not part of the presets.
@@ -271,3 +271,20 @@ Value CRM already has `proforma_invoices.payment_schedule`, the payment function
   - Renewal reminders, vendor price confirmation, and renewal PI generation are not implemented. The planned next phase is an internal reminder one calendar month before the next committed year, vendor confirmation, a renewal PI for that year only, 100% in advance, and a review at commitment end.
   - Checked on 2026-10-21, Value CRM already had the payment-schedule migrations and the subscription commitment objects, while `20261021193000_subscription_commitments` is absent from `schema_migrations`. Do not re-apply that file. On 22 October 2026 the payment-tracking SQL was applied to Value CRM only, and the existing `admin-users` function was updated in place with JWT verification still required. Existing profiles kept the new flags false. Issued snapshots were not rewritten, and no plans, receipts, or subscriptions were created. The production frontend is this revision on `main`. After a receipt or subscription exists, dropping the tables deletes that history. Snapshots are not rewritten.
 - References: `supabase/migrations/20261021220000_payment_tracking.sql`, `supabase/tests/payment_tracking.sql`, `src/lib/payment-tracking.ts`, `src/components/PaymentTrackingSection.tsx`, `src/pages/Subscriptions.tsx`, `README.md`
+
+## DEC-020
+
+- Decision date: 2026-10-23
+- Documented: 2026-10-23
+- Status: Implemented in the repository. `20261023120000_administrator_company_presets.sql` has not been applied to Value CRM.
+- Decision: Let an active administrator add, edit, and archive company presets. Each preset is one office, one of EGP, USD, or EUR, and one bank account. It uses the existing Egypt or UAE PDF layout family and either an existing numbering sequence or a new prefix.
+- Reason: New offices and bank accounts should not require a code change. The original three presets, their numbers, and issued documents stay valid.
+- Consequences or limitations:
+  - The preset identifier is generated and stable. The display name can change and is not a foreign key. Office identity is a short code, separate from the numbering sequence. UAE — USD and UAE — EUR still share the AE sequence. Another currency for that office can share it. A new office can have its own prefix and counter. EG and AE prefixes cannot be changed. A prefix that has issued a number cannot be changed, and there is no counter reset. Prefixes are 1 to 8 letters or digits, stored in capitals, with no spaces or punctuation, so two sequences cannot format the same `PREFIX-YYYY-SERIAL` number.
+  - The year still comes from the PI date and still resets each year. Allocation remains the locked counter inside the issue transaction. Revisions keep the original number. A duplicate receives a number only when it is issued.
+  - After a preset has issued a PI, its currency, office, and sequence cannot be changed. A new preset is created instead. Company, bank, logo, display name, and layout can still be edited. Issued snapshots are not rewritten, and the PDF is still rendered from the snapshot. No PDF file is stored. A preset that selects the UAE layout prints the company and bank saved on that preset. Layout versions stay `v1` for a legacy paragraph, `v2` for a structured schedule, and `v3` for a subscription allocation.
+  - An incomplete preset can be saved and cannot be issued until the existing company and bank fields are present. Only EGP, USD, and EUR are accepted. Prices are not converted. Changing the preset on an unissued draft still rejects a subscription priced in another currency.
+  - A used preset is archived, not deleted. Archived presets disappear from new selection and remain on existing PIs, filters, and downloads. A draft that already selected one keeps it and cannot be newly issued until an active preset is chosen. A revision of an issued PI can still use the archived preset and its original currency and sequence. A duplicate must use an active preset before issue. The database enforces this.
+  - Only an active administrator can insert, update, archive, or restore presets and sequences. Active members can read them for the PI screens they already use. `numbering_sequences` has row level security, explicit policies, and no delete grant. `private.pi_counters` stays private. The original three presets, bank details, logos, and counter rows are not rewritten or reseeded.
+  - The migration can be applied before this frontend is served. The previous frontend can still issue the original three presets. This frontend needs the migration. Do not serve it first. The rollout order is in the README. Do not apply the file to Verifications or Value-Website, and do not re-run older migrations.
+- References: `supabase/migrations/20261023120000_administrator_company_presets.sql`, `supabase/tests/company_presets.sql`, `supabase/tests/preset_numbering_concurrent.sh`, `src/components/CompanyPresetSettings.tsx`, `src/lib/presets.ts`, `README.md`

@@ -15,10 +15,9 @@ import { adjustScheduleForSubscriptionSelection, applySubscriptionConversion, co
 import { numericInputValue } from "../lib/numeric-input";
 import { can } from "../lib/permissions";
 import { editorLineFromStored, generationBlock, isBlankPlaceholder, isResolvedLine, linesForDraft, type EditorLine } from "../lib/pi-lines";
+import { layoutLabel, presetOptionLabel, subscriptionCurrencyMismatch } from "../lib/presets";
 import { supabase } from "../lib/supabase";
 import {
-  PRESETS,
-  presetByCode,
   type Client,
   type ClientContact,
   type CompanyPreset,
@@ -27,7 +26,6 @@ import {
   type DraftPayload,
   type PiLine,
   type PiSnapshot,
-  type PresetCode,
   type Product,
   type ProductCommitmentOption,
   type Profile,
@@ -71,7 +69,7 @@ export function PiEditorPage() {
   const [draftVersion, setDraftVersion] = useState(1);
   const [piNumber, setPiNumber] = useState<string | null>(null);
   const [draftOpen, setDraftOpen] = useState(true);
-  const [presetCode, setPresetCode] = useState<PresetCode | "">("");
+  const [presetCode, setPresetCode] = useState("");
   const [presets, setPresets] = useState<CompanyPreset[]>([]);
   const [piDate, setPiDate] = useState("");
   const [expiryDate, setExpiryDate] = useState("");
@@ -116,7 +114,13 @@ export function PiEditorPage() {
   const [warranty, setWarranty] = useState("");
   const [notes, setNotes] = useState("");
 
-  const currency = presetByCode(presetCode)?.currency ?? null;
+  const selectedPreset = presets.find((preset) => preset.code === presetCode) ?? null;
+  const currency = selectedPreset?.currency ?? null;
+  const currencyWarning = subscriptionCurrencyMismatch(lines, currency);
+  const officeChoices = presets
+    .filter((preset) => preset.archived_at == null || preset.code === presetCode)
+    .slice()
+    .sort((left, right) => left.display_name.localeCompare(right.display_name) || left.code.localeCompare(right.code));
 
   async function load(piId: string) {
     const [piResult, lineResult, salesResult, presetResult, peopleResult] = await Promise.all([
@@ -601,6 +605,18 @@ export function PiEditorPage() {
     if (!id || acting.current) return;
     acting.current = true;
     try {
+      const chosen = presets.find((preset) => preset.code === presetCode) ?? null;
+      if (!piNumber && chosen?.archived_at) {
+        setMessage(null);
+        setError("This preset is archived. Choose an active preset before issuing. A revision of an issued PI can still use it.");
+        return;
+      }
+      const currencyWarning = subscriptionCurrencyMismatch(lines, chosen?.currency ?? null);
+      if (currencyWarning) {
+        setMessage(null);
+        setError(currencyWarning);
+        return;
+      }
       const blocked = generationBlock(lines);
       if (blocked) {
         setMessage(null);
@@ -751,7 +767,7 @@ export function PiEditorPage() {
               {previewing ? "Preparing preview…" : "Preview"}
             </Button>
             {canGenerate ? (
-              <Button type="button" variant="primary" onClick={() => void onGenerate()} disabled={working}>
+              <Button type="button" variant="primary" onClick={() => void onGenerate()} disabled={working || (!piNumber && Boolean(selectedPreset?.archived_at))}>
                 {busy === "generate" ? "Generating…" : "Generate PI"}
               </Button>
             ) : null}
@@ -780,13 +796,26 @@ export function PiEditorPage() {
       ) : null}
       {!canEdit ? <div className="mb-4"><Banner tone="info">You can view this draft but cannot change it.</Banner></div> : null}
       {message ? <div className="mb-4"><Banner tone="info">{message}</Banner></div> : null}
+      {!piNumber && selectedPreset?.archived_at ? (
+        <div className="mb-4">
+          <Banner tone="error">This preset is archived. The saved selection stays visible, but choose an active preset before issuing this PI.</Banner>
+        </div>
+      ) : null}
+      {currencyWarning ? <div className="mb-4"><Banner tone="error">{currencyWarning}</Banner></div> : null}
 
       <div className="rounded-[10px] border border-line bg-white px-5 py-6 sm:px-7 sm:py-7 lg:px-8">
         <div className="grid gap-4 md:grid-cols-3">
-          <Field label="Office" hint={piNumber ? "This number keeps its office and currency." : undefined}>
-            <Select value={presetCode} disabled={!canEdit || Boolean(piNumber)} onChange={(event) => setPresetCode(event.target.value as PresetCode | "")}>
+          <Field
+            label="Office"
+            hint={piNumber
+              ? "This number keeps its office and currency."
+              : selectedPreset
+                ? `${selectedPreset.currency} · ${layoutLabel(selectedPreset.layout)}`
+                : "Choose a company preset. Prices are not converted between currencies."}
+          >
+            <Select value={presetCode} disabled={!canEdit || Boolean(piNumber)} onChange={(event) => setPresetCode(event.target.value)}>
               <option value="">Select a preset</option>
-              {PRESETS.map((preset) => <option key={preset.code} value={preset.code}>{preset.label}</option>)}
+              {officeChoices.map((preset) => <option key={preset.code} value={preset.code}>{presetOptionLabel(preset)}</option>)}
             </Select>
           </Field>
           <Field label="Date">

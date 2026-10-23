@@ -1,8 +1,8 @@
 import { numericInputValue } from "./numeric-input";
 import type { CanonicalPayment, CanonicalPaymentRow, PaymentSchedule, ResidualTarget } from "./payment-schedule";
 
-export type PresetCode = "EG-EGP" | "AE-USD" | "AE-EUR";
-export type OfficeCode = "EG" | "AE";
+export type PresetCode = string;
+export type OfficeCode = string;
 export type CurrencyCode = "EGP" | "USD" | "EUR";
 export type DiscountType = "none" | "fixed" | "percent";
 export type BillingType = "one_time" | "subscription";
@@ -111,11 +111,20 @@ export type ProductCost = {
   purchase_currency: CurrencyCode | null;
 };
 
+export type NumberingSequence = {
+  code: string;
+  prefix: string;
+  created_at: string;
+};
+
 export type CompanyPreset = {
   code: PresetCode;
+  display_name: string;
   office: OfficeCode;
   currency: CurrencyCode;
   layout: "egypt" | "uae";
+  sequence_code: string;
+  archived_at: string | null;
   company_name: string;
   address: string;
   phone: string;
@@ -227,6 +236,7 @@ export type ProformaInvoice = {
   preset_code: PresetCode | null;
   office: OfficeCode | null;
   currency: CurrencyCode | null;
+  sequence_code: string | null;
   pi_year: number | null;
   serial: number | null;
   pi_number: string | null;
@@ -289,6 +299,8 @@ export type PiListRow = {
   salesperson_ids: string[] | null;
   display_status: DisplayStatus;
   has_open_revision: boolean;
+  preset_code: PresetCode | null;
+  preset_display_name: string | null;
 };
 
 export type SnapshotLine = {
@@ -468,16 +480,6 @@ export type SaveDraftResult = {
   grand_total: string;
   line_totals: (string | null)[];
 };
-
-export const PRESETS: { code: PresetCode; label: string; office: OfficeCode; currency: CurrencyCode }[] = [
-  { code: "EG-EGP", label: "Egypt — EGP", office: "EG", currency: "EGP" },
-  { code: "AE-USD", label: "UAE — USD", office: "AE", currency: "USD" },
-  { code: "AE-EUR", label: "UAE — EUR", office: "AE", currency: "EUR" },
-];
-
-export function presetByCode(code: string | null | undefined) {
-  return PRESETS.find((preset) => preset.code === code) ?? null;
-}
 
 export function sellingPriceForCurrency(
   product: {
