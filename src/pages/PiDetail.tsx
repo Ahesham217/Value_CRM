@@ -10,6 +10,7 @@ import { previewPaymentSchedule, readPaymentSchedule } from "../lib/payment-sche
 import { can } from "../lib/permissions";
 import { supabase } from "../lib/supabase";
 import type { PiLine, PiListRow, PiVersion, ProformaInvoice, TrackingStatus } from "../lib/types";
+import { PAYMENT_TRACKING_ANCHOR } from "../lib/reporting";
 import { adjustmentRows, moneyLabel, taxExclusionNotes } from "../lib/workspace-view";
 
 function paymentDescription(pi: ProformaInvoice, latest: PiVersion | null): string {
@@ -77,6 +78,11 @@ export function PiDetailPage() {
     if (!id) return;
     load(id).catch((caught) => setError(errorText(caught))).finally(() => setLoading(false));
   }, [id]);
+
+  useEffect(() => {
+    if (loading || location.hash !== `#${PAYMENT_TRACKING_ANCHOR}`) return;
+    document.getElementById(PAYMENT_TRACKING_ANCHOR)?.scrollIntoView({ block: "start" });
+  }, [loading, location.hash]);
 
   async function changeStatus() {
     if (!id) return;

@@ -1,18 +1,29 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
+import { mainNavigation } from "../lib/navigation";
 import { Menu } from "./ui";
-
-const links = [
-  { to: "/pis", label: "Proforma invoices" },
-  { to: "/subscriptions", label: "Subscriptions" },
-  { to: "/clients", label: "Clients" },
-  { to: "/vendors", label: "Vendors" },
-  { to: "/products", label: "Products" },
-];
 
 function NavIcon({ name }: { name: string }) {
   const common = "h-4 w-4 shrink-0";
+  if (name === "Dashboard") {
+    return (
+      <svg className={common} viewBox="0 0 16 16" aria-hidden="true">
+        <rect x="2.5" y="2.5" width="4.5" height="4.5" rx="0.8" fill="none" stroke="currentColor" strokeWidth="1.4" />
+        <rect x="9" y="2.5" width="4.5" height="4.5" rx="0.8" fill="none" stroke="currentColor" strokeWidth="1.4" />
+        <rect x="2.5" y="9" width="4.5" height="4.5" rx="0.8" fill="none" stroke="currentColor" strokeWidth="1.4" />
+        <rect x="9" y="9" width="4.5" height="4.5" rx="0.8" fill="none" stroke="currentColor" strokeWidth="1.4" />
+      </svg>
+    );
+  }
+  if (name === "Payments") {
+    return (
+      <svg className={common} viewBox="0 0 16 16" aria-hidden="true">
+        <rect x="2.5" y="3.5" width="11" height="9" rx="1.2" fill="none" stroke="currentColor" strokeWidth="1.4" />
+        <path d="M2.5 6.5h11" stroke="currentColor" strokeWidth="1.4" />
+      </svg>
+    );
+  }
   if (name === "Proforma invoices") {
     return (
       <svg className={common} viewBox="0 0 16 16" aria-hidden="true">
@@ -73,7 +84,7 @@ export function Shell() {
   const [open, setOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const drawerRef = useRef<HTMLDivElement>(null);
-  const items = [...links, ...(profile?.is_admin ? [{ to: "/settings", label: "Settings" }] : [])];
+  const items = mainNavigation(profile?.is_admin === true);
 
   useEffect(() => {
     setOpen(false);
@@ -114,7 +125,7 @@ export function Shell() {
     return (
       <nav className="flex flex-col gap-0.5" aria-label={label}>
         {items.map((link) => (
-          <NavLink key={link.to} to={link.to} className={({ isActive }) => navClass(isActive)}>
+          <NavLink key={link.to} to={link.to} end={link.end} className={({ isActive }) => navClass(isActive)}>
             <NavIcon name={link.label} />
             {link.label}
           </NavLink>

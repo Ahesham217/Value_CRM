@@ -15,6 +15,7 @@ import {
 } from "../lib/payment-tracking";
 import { supabase } from "../lib/supabase";
 import type { PiVersion } from "../lib/types";
+import { PAYMENT_TRACKING_ANCHOR } from "../lib/reporting";
 import { Banner, Button, Field, Select, TextArea } from "./ui";
 
 type PlanRow = {
@@ -342,10 +343,10 @@ export function PaymentTrackingSection({
     await load().catch((caught) => setError(errorText(caught)));
   }
 
-  if (loading) return <section className="rounded-[10px] border border-line bg-white p-6 text-sm text-slate-600">Loading payment tracking…</section>;
+  if (loading) return <section id={PAYMENT_TRACKING_ANCHOR} className="rounded-[10px] border border-line bg-white p-6 text-sm text-slate-600">Loading payment tracking…</section>;
   if (versions.length === 0) {
     return (
-      <section className="rounded-[10px] border border-line bg-white p-6">
+      <section id={PAYMENT_TRACKING_ANCHOR} className="rounded-[10px] border border-line bg-white p-6">
         <h2 className="text-[15px] font-semibold text-ink">Payment tracking</h2>
         <p className="mt-2 text-sm text-slate-600">Generate a PI before starting payment tracking. A draft is not a collection plan, and downloading a PI does not start one.</p>
       </section>
@@ -353,7 +354,7 @@ export function PaymentTrackingSection({
   }
 
   return (
-    <section className="rounded-[10px] border border-line bg-white p-6">
+    <section id={PAYMENT_TRACKING_ANCHOR} className="rounded-[10px] border border-line bg-white p-6">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-[15px] font-semibold text-ink">Payment tracking</h2>
         {plan ? <p className="text-sm text-slate-600">Collection status is separate from the PI status.</p> : null}
