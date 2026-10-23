@@ -5,6 +5,7 @@ import { Button, EmptyState, FilterChip, Menu, PageHeader, Pagination, Select, S
 import { errorText } from "../lib/errors";
 import { displayNumber, formatDate, formatMoney } from "../lib/format";
 import { can } from "../lib/permissions";
+import { presetFilterOptions } from "../lib/presets";
 import { PAGE_SIZE, sanitizeSearch } from "../lib/records";
 import { supabase } from "../lib/supabase";
 import type { PiListRow, Profile } from "../lib/types";
@@ -27,6 +28,7 @@ export function PiListPage() {
   const [rows, setRows] = useState<PiListRow[]>([]);
   const [count, setCount] = useState(0);
   const [people, setPeople] = useState<Pick<Profile, "id" | "full_name">[]>([]);
+  const [presetOptions, setPresetOptions] = useState<{ code: string; label: string }[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -34,6 +36,14 @@ export function PiListPage() {
   useEffect(() => {
     supabase.from("profiles").select("id, full_name").eq("is_salesperson", true).order("full_name").then(({ data }) => {
       setPeople((data ?? []) as Pick<Profile, "id" | "full_name">[]);
+    });
+    supabase.from("company_presets").select("code, display_name, archived_at").order("display_name").then(({ data, error: presetError }) => {
+      if (presetError) {
+        setPresetOptions([]);
+        setError(errorText(presetError));
+        return;
+      }
+      setPresetOptions(presetFilterOptions((data ?? []) as { code: string; display_name: string; archived_at: string | null }[]));
     });
   }, []);
 
@@ -44,7 +54,7 @@ export function PiListPage() {
     let request = supabase.from("pi_list").select("*", { count: "exact" }).order("created_at", { ascending: false });
     const term = sanitizeSearch(query);
     if (term) request = request.or(`pi_number.ilike.%${term}%,client_name.ilike.%${term}%`);
-    if (office) request = request.eq("office", office);
+    if (office) request = request.eq("preset_code", office);
     if (currency) request = request.eq("currency", currency);
     if (status) request = request.eq("display_status", status);
     if (salesperson) request = request.contains("salesperson_ids", [salesperson]);
@@ -78,7 +88,15 @@ export function PiListPage() {
   }
 
   const salespersonName = people.find((person) => person.id === salesperson)?.full_name ?? (salesperson ? "Selected salesperson" : "");
-  const chips = piListFilterChips({ office, currency, status, salespersonName, fromDate, toDate });
+  const chips = piListFilterChips({
+    office,
+    officeName: presetOptions.find((preset) => preset.code === office)?.label ?? "",
+    currency,
+    status,
+    salespersonName,
+    fromDate,
+    toDate,
+  });
   const hiddenFilterCount = chips.filter((chip) => chip.id !== "status").length;
 
   function removeChip(id: string) {
@@ -135,8 +153,7 @@ export function PiListPage() {
             <span className="mb-1 block font-medium text-slate-700">Office</span>
             <Select value={office} onChange={(event) => { setOffice(event.target.value); setPage(1); }}>
               <option value="">All</option>
-              <option value="EG">Egypt</option>
-              <option value="AE">UAE</option>
+              {presetOptions.map((preset) => <option key={preset.code} value={preset.code}>{preset.label}</option>)}
             </Select>
           </label>
           <label className="text-sm">

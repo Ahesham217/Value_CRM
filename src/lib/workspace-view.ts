@@ -49,6 +49,7 @@ export function moneyLabel(amount: string | number | null | undefined, currency?
 
 export function piListFilterChips(input: {
   office: string;
+  officeName?: string;
   currency: string;
   status: string;
   salespersonName: string;
@@ -57,7 +58,7 @@ export function piListFilterChips(input: {
 }): FilterChip[] {
   const chips: FilterChip[] = [];
   if (input.status) chips.push({ id: "status", label: `Status: ${displayStatusLabel(input.status)}` });
-  if (input.office) chips.push({ id: "office", label: `Office: ${officeLabel(input.office)}` });
+  if (input.office) chips.push({ id: "office", label: `Office: ${input.officeName?.trim() || officeLabel(input.office)}` });
   if (input.currency) chips.push({ id: "currency", label: `Currency: ${input.currency}` });
   if (input.salespersonName) chips.push({ id: "salesperson", label: `Salesperson: ${input.salespersonName}` });
   if (input.fromDate || input.toDate) {

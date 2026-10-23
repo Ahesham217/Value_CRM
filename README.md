@@ -47,7 +47,7 @@ Never put the service-role or secret key in a `VITE_` variable, frontend source,
 
 ## Migrations
 
-SQL lives in `supabase/migrations` and is the reproducible schema. Older files have been applied to Value CRM. Do not run those again. Payment tracking was applied to Value CRM on 22 October 2026 and is called out below. Do not run that file again.
+SQL lives in `supabase/migrations` and is the reproducible schema. Older files have been applied to Value CRM. Do not run those again. Payment tracking was applied to Value CRM on 22 October 2026, and administrator company presets were applied on 23 October 2026. Both are called out below. Do not run those files again.
 
 On a new database, run the files in filename order with the Supabase SQL editor or CLI:
 
@@ -65,6 +65,7 @@ supabase db query --linked -f supabase/migrations/20261019150000_product_pi_hist
 supabase db query --linked -f supabase/migrations/20261021180000_payment_schedules.sql
 supabase db query --linked -f supabase/migrations/20261021193000_subscription_commitments.sql
 supabase db query --linked -f supabase/migrations/20261021220000_payment_tracking.sql
+supabase db query --linked -f supabase/migrations/20261023120000_administrator_company_presets.sql
 ```
 
 The first migration installs `public.rls_auto_enable()` and the `ensure_rls` event trigger. That is the same automatic RLS trigger used on the other Value Technologies projects: every new table in `public` gets row level security. The trigger does not create policies. This repo creates those policies explicitly and also enables RLS in the table statements.
@@ -110,6 +111,18 @@ What was released on 22 October 2026:
 Do not roll the frontend back after a receipt or subscription exists if you also remove the SQL. The previous screen simply will not show the records. Dropping the new tables deletes receipt and subscription history and cannot be reconstructed from issued PDFs. Issued snapshots are not changed by tracking, receipts, reversals, or activation. If no plan has been started, the new tables and columns can be dropped and `private.has_flag` restored from `20261021193000_subscription_commitments.sql`'s predecessor definition in `20261018120100_functions.sql`, plus any flags added since. Do not delete invoices, products, users, or snapshots, and do not reset numbering counters.
 
 `supabase/tests/payment_tracking_concurrent.sh` and `supabase/tests/payment_tracking_lock_order.sh` commit rows. Run them only on a disposable database, never on Value CRM.
+
+`20261023120000_administrator_company_presets.sql` was applied to Value CRM on 23 October 2026. It was not applied to Verifications or Value-Website. Do not run the file again. The migration API recorded it as four parts, in order: `20261023204840 administrator_company_presets_schema`, `20261023205023 administrator_company_presets_drafts`, `20261023205059 administrator_company_presets_issue`, and `20261023205101 administrator_company_presets_api`. It adds administrator-managed presets and numbering sequences. It does not rewrite issued snapshots, reset counters, or delete invoices, versions, lines, receipts, plans, subscriptions, users, or products. The original three presets, their bank details, logos, office codes, and the EG and AE counters stay as they are.
+
+The current frontend can keep issuing Egypt — EGP, UAE — USD, and UAE — EUR after the migration, because those preset codes and the save and issue calls are unchanged. It will not show a preset added after the migration until the page is reloaded onto this frontend. This frontend reads `display_name`, `archived_at`, numbering sequences, and `create_company_preset`.
+
+1. The SQL above is already applied to Value CRM.
+2. Serve this frontend. Ask people to reload. An open tab can still issue one of the original three presets. It cannot create a preset and it will not list a new one.
+3. An administrator adds further presets in Settings → Company and bank.
+
+Do not roll this frontend back after a new preset has been used to issue a PI if the migration is removed at the same time. Before any preset other than the original three exists, the new table, columns, and functions can be dropped and the previous `persist_draft`, `generate_pi`, `assert_pi_ready`, and `duplicate_pi` definitions restored from `20261021193000_subscription_commitments.sql` and `20261021180000_payment_schedules.sql`. Do not delete invoices or reset counters. Issued snapshots are not rewritten, so removing the migration does not change a document that was already issued.
+
+`supabase/tests/preset_numbering_concurrent.sh`, `supabase/tests/preset_identity_concurrent.sh`, and `supabase/tests/preset_duplicate_concurrent.sh` commit rows. Run them only on a disposable database, never on Value CRM.
 
 `20261018120300_egypt_logo.sql` stores the logo extracted from `reference-templates/Egypt Template.xlsx`. The UAE workbooks do not contain a logo. If Settings shows no Egypt logo, run that file once in the SQL editor.
 
@@ -157,13 +170,21 @@ New profiles start inactive. Even if public signup is left on by mistake, a self
 
 ## Company presets
 
-There are exactly three presets. Office and currency cannot be added or removed.
+Settings → Company and bank lists every preset. An administrator uses **Add preset** to create another one. A preset is one office, one currency, and one bank account. The three presets below are already stored. Their identifiers, bank details, and logos are kept.
 
-| Preset | Company | Currency | Bank |
-| --- | --- | --- | --- |
-| Egypt — EGP | Value Technologies for Import & Agencies S.A.E. | EGP | Commercial International Bank (CIB) |
-| UAE — USD | Value Technologies EMEA FZ-LLC | USD | Arab African International Bank |
-| UAE — EUR | Value Technologies EMEA FZ-LLC | EUR | Arab African International Bank |
+| Preset | Identifier | Company | Currency | Bank | Sequence |
+| --- | --- | --- | --- | --- | --- |
+| Egypt — EGP | `EG-EGP` | Value Technologies for Import & Agencies S.A.E. | EGP | Commercial International Bank (CIB) | EG |
+| UAE — USD | `AE-USD` | Value Technologies EMEA FZ-LLC | USD | Arab African International Bank | AE |
+| UAE — EUR | `AE-EUR` | Value Technologies EMEA FZ-LLC | EUR | Arab African International Bank | AE |
+
+The display name, for example “North Office — USD”, is the label in Settings and on the PI office list. It is not the identifier. The identifier is assigned when the preset is saved and does not change. Only EGP, USD, and EUR can be chosen. There is no currency conversion and no other currency.
+
+The office identifier is a short stable code such as `EG`, `AE`, or `QA`. Presets that use the same code are the same office. It is separate from the numbering sequence. A new currency for an existing office can reuse that office code and that office’s sequence. A new office can have its own sequence.
+
+Each preset chooses the Egypt or UAE PDF layout family. The layout does not copy another office’s company or bank. The PDF prints the company, bank, contact, and logo saved on the preset at the moment the PI is issued. A later edit does not change an issued snapshot.
+
+Account numbers, IBANs, and SWIFT codes are stored as text, including leading zeroes.
 
 Identity and bank details were taken from `reference-templates`:
 
@@ -173,7 +194,13 @@ Identity and bank details were taken from `reference-templates`:
 
 Account numbers, IBANs, and SWIFT codes are stored as text. The UAE legal address is Ras Al Khaimah. The supplier-invoice sentence in the UAE workbooks is not part of this application. The workbook instruction to add a fixed 72 USD or 72 EUR bank charge is not part of the presets. A bank charge is optional and is typed on each PI. The PDF prints that amount only when it is included in the total.
 
-Egypt and UAE are the only PDF layouts. UAE uses the selected USD or EUR preset. A PI cannot be issued until the preset has a company name, address, bank name, account name, account number, IBAN, and SWIFT. Settings shows **Ready to issue** or **Needs configuration**.
+A PI cannot be issued until the preset has a company name, address, bank name, account name, account number, IBAN, and SWIFT. Settings shows **Ready to issue** or **Needs configuration**. An incomplete preset can be saved. Fax, website, tax registration, logo, bank branch, bank address, correspondent bank, and bank notes stay under **More company details** and **More bank details**.
+
+**Numbering.** When the preset is added, choose an existing sequence or enter a new prefix. UAE — USD and UAE — EUR both use the AE sequence, so their numbers continue `AE-2026-00001`, `AE-2026-00002`, and so on. A new prefix such as `QA` starts its own counter at `QA-2026-00001`. The prefix is 1 to 8 letters or digits, starts with a letter, and is stored in capitals. It cannot contain spaces or punctuation, and it cannot match another sequence. The year still comes from the PI date, and each sequence still restarts at 1 in a new year. Allocation stays inside the database transaction. Revisions keep the original number. A duplicate has no number until it is issued. There is no control to reset a counter. The EG and AE prefixes cannot be changed. A prefix that has already issued a number cannot be changed.
+
+After a preset has been used to issue a PI, its office, currency, and numbering sequence stay as they were. Create a new preset to change them. Before the first issue, an administrator can still change them. A draft that was already saved keeps the office, currency, sequence, and prefix from that save. Saving or issuing with the old screen does not relabel those amounts. Reload the draft, review the new identity, and confirm it. The typed prices stay as entered and are not converted. Changing only the company name, bank, logo, or layout does not require that review. An older editor, which does not send the review, can still save and issue the original three presets. Those identities stay fixed once any PI has been issued on them. Saving, issuing, and duplicating lock the preset and its numbering sequence before the PI. That lock waits while an administrator changes the office, currency, sequence, or prefix, and the draft is read again afterwards. A duplicate copies the office, currency, sequence, and prefix saved on the source. It receives a number only when it is later issued. A rejected issue leaves the counter where it was.
+
+**Archiving.** A preset that has been used is archived, not deleted. An archived preset is not offered for a new PI. Existing PIs, list filters, and downloads still show it. A draft that already uses it keeps that selection and warns that an active preset is required before a new issue. A revision of an issued PI still uses the original preset, currency, and sequence, even when that preset is archived. A duplicate is a new draft and must use an active preset before it is issued. These rules are enforced in the database.
 
 Default commercial terms, except the old payment paragraph, are copied onto each new draft and stay editable on that PI. The stored payment paragraph is kept for legacy drafts only. It is not copied onto a new PI and it does not configure the payment schedule. Settings shows it as a legacy paragraph, not as a control for new agreements.
 
@@ -185,9 +212,9 @@ Drag the row handle, or open the row actions and choose Move up or Move down, to
 
 A draft line from before this rule that has no matching product stays on the draft and is marked until someone selects or creates a product. It cannot be saved again or generated until then. The migration does not fill those lines in, and it does not change issued snapshots.
 
-Drafts are editable. **Generate PI** calls the database generation function, which allocates the permanent number and stores version 0 as an immutable snapshot. The browser then renders the PDF from that returned snapshot and downloads it. The PDF is not uploaded. The number looks like `EG-2026-00001` or `AE-2026-00001`. Egypt has one sequence. UAE shares one sequence across USD and EUR. The year comes from the PI date and the sequence resets each year. Allocation is a locked counter inside the database transaction. If rendering or the browser download fails after the database has issued the PI, the number and version stay. The message says the PI was issued and points to **Download** in version history. Trying again from there renders the same snapshot and does not allocate another number or revision.
+Drafts are editable. **Generate PI** calls the database generation function, which allocates the permanent number and stores version 0 as an immutable snapshot. The browser then renders the PDF from that returned snapshot and downloads it. The PDF is not uploaded. The number looks like `EG-2026-00001`, `AE-2026-00001`, or `QA-2026-00001` for a prefix chosen in Settings. Egypt has the EG sequence. UAE — USD and UAE — EUR share the AE sequence. A new preset can share a sequence or start another prefix. The year comes from the PI date and each sequence resets each year. Allocation is a locked counter inside the database transaction. If rendering or the browser download fails after the database has issued the PI, the number and version stay. The message says the PI was issued and points to **Download** in version history. Trying again from there renders the same snapshot and does not allocate another number or revision.
 
-Issued office, currency, year, and base number cannot be revised. Duplicate the PI when those need to change.
+Issued office, currency, year, and base number cannot be revised. Duplicate the PI when those need to change. The office list and the PI list filter load presets from the database, including archived presets so older PIs can still be found. The filter matches the preset, not only Egypt or UAE.
 
 **Create revision** opens the one allowed revision draft. Generating it stores R1, R2, and so on, and keeps every older version. **Duplicate** creates a new draft with no number. Each issued version has **Download**. That renders the version's saved snapshot locally, including versions that were previously marked ready or pending in storage metadata. Download does not require permission to generate a new PI. Someone who can read the version can download it. Someone who cannot read the PI cannot read the snapshot.
 
@@ -207,7 +234,7 @@ Totals are calculated in the database with `numeric` rounding, and the editor pr
 
 A blank price is unknown, not zero. There is no currency conversion and no automatic tax determination. Unused adjustments are omitted from the PDF. The VAT-exclusion sentence is omitted when tax is included.
 
-The customer PDF contains the company, client, bill-to, ship-to, the lead salesperson’s name and phone labelled **Contact person**, items, totals, terms, and bank details. The preparer’s name, additional salespeople, purchase prices, and vendors stay internal. Prepared by is still recorded and visible inside the app. This customer-facing attribution rule also applies when re-downloading older issued snapshots; their saved data is not changed. Draft preview and issued download use the same pdfmake renderer. The renderer dispatches on the snapshot's `layout_version` (`egypt-v1`, `uae-v1`, `egypt-v2`, `uae-v2`, `egypt-v3`, or `uae-v3`). An unsupported layout version is reported and is not drawn with a different layout.
+The customer PDF contains the company, client, bill-to, ship-to, the lead salesperson’s name and phone labelled **Contact person**, items, totals, terms, and bank details. The preparer’s name, additional salespeople, purchase prices, and vendors stay internal. Prepared by is still recorded and visible inside the app. This customer-facing attribution rule also applies when re-downloading older issued snapshots; their saved data is not changed. Draft preview and issued download use the same pdfmake renderer. The renderer dispatches on the snapshot's `layout_version` (`egypt-v1`, `uae-v1`, `egypt-v2`, `uae-v2`, `egypt-v3`, or `uae-v3`). A preset chooses the Egypt or UAE family. The version is still `v1` for a legacy payment paragraph, `v2` for a structured schedule, and `v3` for a subscription allocation. An unsupported layout version is reported and is not drawn with a different layout. The company and bank text come from the snapshot, not from whichever preset currently uses that layout family.
 
 New drafts use a structured payment schedule. Percentages are percentages of the PI grand total after discounts, tax, and charges. A fixed amount stays in the PI currency. At most one row is the remaining balance. A row can be split into equal monthly or yearly instalments of that row's amount; the final instalment absorbs rounding so the group still matches the row. Dates are calendar dates, or rules such as “upon delivery” or “one calendar month after delivery”. A before-shipment row can have its own payment deadline. If that deadline is blank, the draft says the deadline is still to be set, and the PDF says “before shipment” without inventing a date from a shipment. The customer wording is generated from the schedule. Staff do not edit that paragraph on its own.
 
