@@ -89,6 +89,22 @@ export function layoutLabel(layout: "egypt" | "uae"): string {
   return layout === "uae" ? "UAE layout" : "Egypt layout";
 }
 
+export const PRESET_IDENTITY_REVIEW =
+  "This preset's office, currency, or numbering changed after the draft was saved. Reload the draft and review it before saving or issuing. Prices were not converted.";
+
+export function presetIdentityChanged(input: {
+  saved: { presetCode: string; office: string; currency: string; sequenceCode: string; prefix: string } | null;
+  preset: { code: string; office: string; currency: string; sequenceCode: string; prefix: string } | null;
+}): boolean {
+  const saved = input.saved;
+  const preset = input.preset;
+  if (!saved || !preset || saved.presetCode !== preset.code) return false;
+  return saved.currency !== preset.currency
+    || saved.office !== preset.office
+    || saved.sequenceCode !== preset.sequenceCode
+    || (saved.prefix !== "" && saved.prefix !== preset.prefix);
+}
+
 export function subscriptionCurrencyMismatch(
   lines: { subscription: { currency: string } | null }[],
   currency: string | null,

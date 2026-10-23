@@ -533,7 +533,9 @@ begin
   );
   v_pi := public.create_pi_draft();
   perform public.save_pi_draft(v_pi, 1, v_payload);
-  if (select count(*) from public.payment_plans) <> 0 or (select count(*) from public.subscriptions) <> 0 then
+  if (select count(*) from public.payment_plans where pi_id = v_pi) <> 0
+    or (select count(*) from public.subscriptions where pi_id = v_pi) <> 0
+  then
     v_fail := v_fail || 'saving the new preset started tracking; ';
   end if;
   v_result := public.generate_pi(v_pi, (select draft_version from public.proforma_invoices where id = v_pi), v_payload);
@@ -739,8 +741,193 @@ begin
     end if;
   end;
 
+  v_code := (to_jsonb(public.create_company_preset(jsonb_build_object(
+    'display_name', 'Stale Office — USD',
+    'office', 'ST',
+    'currency', 'USD',
+    'layout', 'uae',
+    'new_prefix', 'ST',
+    'company_name', 'Stale Office LLC',
+    'address', 'Doha',
+    'bank_name', 'Stale Bank',
+    'account_name', 'Stale Office LLC',
+    'account_number', '000123',
+    'iban', 'QA00STALE000123',
+    'bank_swift', 'STALEQAQ'
+  ))) ->> 'code');
+  v_draft := public.create_pi_draft();
+  perform public.save_pi_draft(v_draft, 1, v_base || jsonb_build_object('preset_code', v_code));
+  if (select currency from public.proforma_invoices where id = v_draft) <> 'USD'
+    or (select unit_price from public.pi_lines where pi_id = v_draft) <> 10.50
+    or (select numbering_prefix from public.proforma_invoices where id = v_draft) <> 'ST'
+  then
+    v_fail := v_fail || 'stale fixture was not saved as USD 10.50; ';
+  end if;
+  v_count := coalesce((select last_value from private.pi_counters where office = 'ST' and pi_year = 2026), 0);
+  update public.company_presets set currency = 'EUR' where code = v_code;
   begin
-    delete from public.company_presets where code = v_own;
+    perform public.generate_pi(v_draft, (select draft_version from public.proforma_invoices where id = v_draft), v_base || jsonb_build_object('preset_code', v_code));
+    v_fail := v_fail || 'stale editor issued EUR 10.50; ';
+  exception when others then
+    if sqlerrm not like '%Prices were not converted%' then
+      v_fail := v_fail || 'stale currency ' || sqlerrm || '; ';
+    end if;
+  end;
+  begin
+    perform public.generate_pi(v_draft, (select draft_version from public.proforma_invoices where id = v_draft), v_base || jsonb_build_object(
+      'preset_code', v_code, 'confirm_preset_identity', true, 'expected_currency', 'USD',
+      'expected_office', 'ST', 'expected_sequence_code', 'ST', 'expected_prefix', 'ST'
+    ));
+    v_fail := v_fail || 'stale confirmation issued the old currency; ';
+  exception when others then
+    if sqlerrm not like '%Prices were not converted%' then
+      v_fail := v_fail || 'stale confirm ' || sqlerrm || '; ';
+    end if;
+  end;
+  if (select pi_number from public.proforma_invoices where id = v_draft) is not null
+    or (select currency from public.proforma_invoices where id = v_draft) <> 'USD'
+    or (select unit_price from public.pi_lines where pi_id = v_draft) <> 10.50
+    or coalesce((select last_value from private.pi_counters where office = 'ST' and pi_year = 2026), 0) <> v_count
+    or (select count(*) from public.pi_versions where pi_id = v_draft) <> 0
+  then
+    v_fail := v_fail || 'rejected currency change consumed a number or relabeled the draft; ';
+  end if;
+  v_result := public.generate_pi(v_draft, (select draft_version from public.proforma_invoices where id = v_draft), v_base || jsonb_build_object(
+    'preset_code', v_code, 'confirm_preset_identity', true, 'expected_currency', 'EUR',
+    'expected_office', 'ST', 'expected_sequence_code', 'ST', 'expected_prefix', 'ST'
+  ));
+  if (select currency from public.proforma_invoices where id = v_draft) <> 'EUR'
+    or (select unit_price from public.pi_lines where pi_id = v_draft) <> 10.50
+    or v_result #>> '{snapshot,currency}' <> 'EUR'
+    or v_result #>> '{snapshot,lines,0,unit_price}' <> '10.50'
+    or v_result ->> 'pi_number' <> 'ST-2026-00001'
+  then
+    v_fail := v_fail || 'reviewed currency change did not keep 10.50 ' || coalesce(v_result ->> 'pi_number', '') || '; ';
+  end if;
+
+  v_shared := (to_jsonb(public.create_company_preset(jsonb_build_object(
+    'display_name', 'Office drift',
+    'office', 'OA',
+    'currency', 'USD',
+    'layout', 'egypt',
+    'new_prefix', 'OA',
+    'company_name', 'Office Drift',
+    'address', 'Address',
+    'bank_name', 'Bank',
+    'account_name', 'Office Drift',
+    'account_number', '1',
+    'iban', 'IBAN-OA',
+    'bank_swift', 'OFFICEQA'
+  ))) ->> 'code');
+  v_other := public.create_pi_draft();
+  perform public.save_pi_draft(v_other, 1, v_base || jsonb_build_object('preset_code', v_shared));
+  update public.company_presets set office = 'OB' where code = v_shared;
+  begin
+    perform public.generate_pi(v_other, (select draft_version from public.proforma_invoices where id = v_other), v_base || jsonb_build_object('preset_code', v_shared));
+    v_fail := v_fail || 'stale office issued; ';
+  exception when others then
+    if sqlerrm not like '%Prices were not converted%' then
+      v_fail := v_fail || 'stale office ' || sqlerrm || '; ';
+    end if;
+  end;
+  if (select office from public.proforma_invoices where id = v_other) <> 'OA'
+    or (select pi_number from public.proforma_invoices where id = v_other) is not null
+  then
+    v_fail := v_fail || 'stale office relabeled the draft; ';
+  end if;
+
+  perform public.create_company_preset(jsonb_build_object(
+    'display_name', 'Sequence target',
+    'office', 'S2',
+    'currency', 'USD',
+    'layout', 'egypt',
+    'new_prefix', 'S2',
+    'company_name', 'Sequence Target',
+    'address', 'Address',
+    'bank_name', 'Bank',
+    'account_name', 'Sequence Target',
+    'account_number', '1',
+    'iban', 'IBAN-S2',
+    'bank_swift', 'SEQTWOQA'
+  ));
+  v_eur := (to_jsonb(public.create_company_preset(jsonb_build_object(
+    'display_name', 'Sequence drift',
+    'office', 'S1',
+    'currency', 'USD',
+    'layout', 'egypt',
+    'new_prefix', 'S1',
+    'company_name', 'Sequence Drift',
+    'address', 'Address',
+    'bank_name', 'Bank',
+    'account_name', 'Sequence Drift',
+    'account_number', '1',
+    'iban', 'IBAN-S1',
+    'bank_swift', 'SEQONEQA'
+  ))) ->> 'code');
+  v_draft := public.create_pi_draft();
+  perform public.save_pi_draft(v_draft, 1, v_base || jsonb_build_object('preset_code', v_eur));
+  update public.company_presets set sequence_code = 'S2' where code = v_eur;
+  begin
+    perform public.generate_pi(v_draft, (select draft_version from public.proforma_invoices where id = v_draft), v_base || jsonb_build_object('preset_code', v_eur));
+    v_fail := v_fail || 'stale sequence issued; ';
+  exception when others then
+    if sqlerrm not like '%Prices were not converted%' then
+      v_fail := v_fail || 'stale sequence ' || sqlerrm || '; ';
+    end if;
+  end;
+  if (select sequence_code from public.proforma_invoices where id = v_draft) <> 'S1'
+    or (select pi_number from public.proforma_invoices where id = v_draft) is not null
+    or coalesce((select last_value from private.pi_counters where office = 'S2' and pi_year = 2026), 0) <> 0
+  then
+    v_fail := v_fail || 'stale sequence consumed a number; ';
+  end if;
+
+  v_own := (to_jsonb(public.create_company_preset(jsonb_build_object(
+    'display_name', 'Prefix drift',
+    'office', 'PF',
+    'currency', 'USD',
+    'layout', 'egypt',
+    'new_prefix', 'PF',
+    'company_name', 'Prefix Drift',
+    'address', 'Address',
+    'bank_name', 'Bank',
+    'account_name', 'Prefix Drift',
+    'account_number', '1',
+    'iban', 'IBAN-PF',
+    'bank_swift', 'PREFXQAQ'
+  ))) ->> 'code');
+  v_other := public.create_pi_draft();
+  perform public.save_pi_draft(v_other, 1, v_base || jsonb_build_object('preset_code', v_own));
+  update public.numbering_sequences set prefix = 'PG' where code = 'PF';
+  begin
+    perform public.generate_pi(v_other, (select draft_version from public.proforma_invoices where id = v_other), v_base || jsonb_build_object('preset_code', v_own));
+    v_fail := v_fail || 'stale prefix issued; ';
+  exception when others then
+    if sqlerrm not like '%Prices were not converted%' then
+      v_fail := v_fail || 'stale prefix ' || sqlerrm || '; ';
+    end if;
+  end;
+  if (select numbering_prefix from public.proforma_invoices where id = v_other) <> 'PF'
+    or (select pi_number from public.proforma_invoices where id = v_other) is not null
+    or coalesce((select last_value from private.pi_counters where office = 'PF' and pi_year = 2026), 0) <> 0
+  then
+    v_fail := v_fail || 'stale prefix consumed a number; ';
+  end if;
+
+  update public.company_presets set company_name = 'Egypt Reviewed Name' where code = 'EG-EGP';
+  v_draft := public.create_pi_draft();
+  perform public.save_pi_draft(v_draft, 1, v_base || jsonb_build_object('preset_code', 'EG-EGP'));
+  v_result := public.generate_pi(v_draft, (select draft_version from public.proforma_invoices where id = v_draft), v_base || jsonb_build_object('preset_code', 'EG-EGP'));
+  if v_result ->> 'pi_number' not like 'EG-%'
+    or v_result #>> '{snapshot,currency}' <> 'EGP'
+    or v_result #>> '{snapshot,company,name}' <> 'Egypt Reviewed Name'
+    or (select currency from public.proforma_invoices where id = v_draft) <> 'EGP'
+  then
+    v_fail := v_fail || 'original preset payload stopped issuing ' || coalesce(v_result ->> 'pi_number', '') || '; ';
+  end if;
+
+  begin
+    delete from public.company_presets where display_name = 'North renamed';
     v_fail := v_fail || 'used preset was deleted; ';
   exception when others then
     if sqlerrm not like '%cannot be deleted%' then

@@ -86,6 +86,7 @@ begin
   end if;
 
   if tg_op = 'UPDATE' and new.prefix is distinct from old.prefix then
+    -- This UPDATE already holds the sequence row. Re-read after that wait.
     if old.code in ('EG', 'AE') then
       raise exception 'The original EG and AE numbering prefixes cannot be changed.';
     end if;
@@ -227,21 +228,30 @@ begin
     raise exception 'The numbering sequence does not exist.';
   end if;
 
-  if tg_op = 'UPDATE' then
-    select exists (
-      select 1
-      from public.proforma_invoices
-      where preset_code = old.code
-        and pi_number is not null
-    ) into v_used;
-    if v_used and (
+  if tg_op = 'UPDATE'
+    and (
       new.office is distinct from old.office
       or new.currency is distinct from old.currency
       or (
         old.sequence_code is not null
         and new.sequence_code is distinct from old.sequence_code
       )
-    ) then
+    )
+  then
+    -- The preset row is already locked. Lock its sequences next, in code order,
+    -- then re-read issued PIs. First issue takes the preset, then the sequence, then the PI.
+    perform 1
+    from public.numbering_sequences
+    where code = any (array[old.sequence_code, new.sequence_code])
+    order by code
+    for update;
+    select exists (
+      select 1
+      from public.proforma_invoices
+      where preset_code = old.code
+        and pi_number is not null
+    ) into v_used;
+    if v_used then
       raise exception 'This preset has already been used to issue a PI. Its currency, office, and numbering sequence stay as they were. Create a new preset to change them.';
     end if;
   end if;
@@ -351,6 +361,18 @@ comment on column public.proforma_invoices.office is
 comment on column public.proforma_invoices.sequence_code is
   'Numbering sequence used when this PI is issued. Null until a preset is saved.';
 
+alter table public.proforma_invoices
+  add column numbering_prefix text;
+
+update public.proforma_invoices as pi
+set numbering_prefix = s.prefix
+from public.numbering_sequences as s
+where pi.sequence_code = s.code
+  and pi.numbering_prefix is null;
+
+comment on column public.proforma_invoices.numbering_prefix is
+  'Prefix accepted when the draft last reviewed this preset. A later prefix, office, currency, or sequence change stays off the draft until that review. Amounts are not converted.';
+
 alter table public.proforma_invoices drop constraint if exists proforma_invoices_office_check;
 
 do $drop_invoice_checks$
@@ -397,6 +419,46 @@ create unique index proforma_invoices_sequence_year_serial_key
   on public.proforma_invoices (sequence_code, pi_year, serial)
   where sequence_code is not null and pi_year is not null and serial is not null;
 
+-- Lock order for preset identity and first issue: presets by code, then sequences by code, then the PI, then private.pi_counters.
+create or replace function private.lock_preset_configurations(p_codes text[])
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_code text;
+  v_sequence text;
+  v_sequences text[] := '{}';
+begin
+  for v_code in
+    select distinct btrim(item.code)
+    from unnest(p_codes) as item(code)
+    where nullif(btrim(item.code), '') is not null
+    order by 1
+  loop
+    perform 1 from public.company_presets where code = v_code for update;
+    select sequence_code into v_sequence
+    from public.company_presets
+    where code = v_code;
+    if v_sequence is not null then
+      v_sequences := array_append(v_sequences, v_sequence);
+    end if;
+  end loop;
+
+  for v_sequence in
+    select distinct item.seq
+    from unnest(v_sequences) as item(seq)
+    where nullif(btrim(item.seq), '') is not null
+    order by 1
+  loop
+    perform 1 from public.numbering_sequences where code = v_sequence for update;
+  end loop;
+end;
+$$;
+
+revoke all on function private.lock_preset_configurations(text[]) from public, anon, authenticated;
+
 create or replace function private.persist_draft(p_id uuid, p_expected_version integer, p_payload jsonb)
 returns void
 language plpgsql
@@ -409,7 +471,10 @@ declare
   v_office text;
   v_currency text;
   v_sequence text;
+  v_prefix text;
   v_archived timestamptz;
+  v_saved_preset text;
+  v_confirm boolean;
   v_date date;
   v_expiry date;
   v_client uuid;
@@ -445,6 +510,10 @@ begin
     raise exception 'You do not have permission to edit drafts.';
   end if;
 
+  v_preset_code := nullif(p_payload ->> 'preset_code', '');
+  select preset_code into v_saved_preset from public.proforma_invoices where id = p_id;
+  perform private.lock_preset_configurations(array[v_preset_code, v_saved_preset]);
+
   select * into v_pi from public.proforma_invoices where id = p_id for update;
   if not found then
     raise exception 'PI not found.';
@@ -462,8 +531,11 @@ begin
     raise exception 'This draft was updated by someone else. Reload the draft and try again.'
       using errcode = '40001';
   end if;
+  if v_pi.preset_code is distinct from v_saved_preset then
+    raise exception 'This draft was updated by someone else. Reload the draft and try again.'
+      using errcode = '40001';
+  end if;
 
-  v_preset_code := nullif(p_payload ->> 'preset_code', '');
   v_date := private.as_date(p_payload ->> 'pi_date');
   v_expiry := private.as_date(p_payload ->> 'expiry_date');
   v_client := private.as_uuid(p_payload ->> 'client_id');
@@ -480,14 +552,49 @@ begin
   end if;
 
   if v_preset_code is not null then
-    select office, currency, sequence_code, archived_at
-    into v_office, v_currency, v_sequence, v_archived
-    from public.company_presets where code = v_preset_code;
+    select p.office, p.currency, p.sequence_code, p.archived_at, s.prefix
+    into v_office, v_currency, v_sequence, v_archived, v_prefix
+    from public.company_presets p
+    join public.numbering_sequences s on s.code = p.sequence_code
+    where p.code = v_preset_code;
     if not found then
       raise exception 'Unknown office preset.';
     end if;
     if v_archived is not null and v_preset_code is distinct from v_pi.preset_code then
       raise exception 'This preset is archived and cannot be selected. Choose an active preset. A draft that already uses it can keep that selection, but it cannot be newly issued.';
+    end if;
+    if p_payload ? 'expected_currency'
+      or p_payload ? 'expected_office'
+      or p_payload ? 'expected_sequence_code'
+      or p_payload ? 'expected_prefix'
+    then
+      if nullif(p_payload ->> 'expected_currency', '') is distinct from v_currency
+        or nullif(p_payload ->> 'expected_office', '') is distinct from v_office
+        or nullif(p_payload ->> 'expected_sequence_code', '') is distinct from v_sequence
+        or nullif(p_payload ->> 'expected_prefix', '') is distinct from v_prefix
+      then
+        raise exception 'This preset''s office, currency, or numbering changed after the draft was saved. Reload the draft and review it before saving or issuing. Prices were not converted.';
+      end if;
+    end if;
+    v_confirm := coalesce((p_payload ->> 'confirm_preset_identity')::boolean, false);
+    if v_pi.pi_number is null
+      and v_pi.preset_code is not null
+      and v_preset_code is not distinct from v_pi.preset_code
+      and (
+        v_office is distinct from v_pi.office
+        or v_currency is distinct from v_pi.currency
+        or v_sequence is distinct from v_pi.sequence_code
+        or (v_pi.numbering_prefix is not null and v_prefix is distinct from v_pi.numbering_prefix)
+      )
+    then
+      if not v_confirm
+        or nullif(p_payload ->> 'expected_currency', '') is distinct from v_currency
+        or nullif(p_payload ->> 'expected_office', '') is distinct from v_office
+        or nullif(p_payload ->> 'expected_sequence_code', '') is distinct from v_sequence
+        or nullif(p_payload ->> 'expected_prefix', '') is distinct from v_prefix
+      then
+        raise exception 'This preset''s office, currency, or numbering changed after the draft was saved. Reload the draft and review it before saving or issuing. Prices were not converted.';
+      end if;
     end if;
     if v_pi.pi_number is not null and (
       v_office is distinct from v_pi.office
@@ -569,6 +676,7 @@ begin
       office = v_office,
       currency = v_currency,
       sequence_code = v_sequence,
+      numbering_prefix = case when v_pi.pi_number is null then v_prefix else numbering_prefix end,
       pi_date = v_date,
       expiry_date = v_expiry,
       client_id = v_client,
@@ -876,6 +984,8 @@ declare
   v_snapshot jsonb;
   v_preset public.company_presets;
   v_prefix text;
+  v_saved_preset text;
+  v_open boolean;
 begin
   if not private.is_active_member() then
     raise exception 'Your account is disabled or you are not signed in.';
@@ -884,22 +994,33 @@ begin
     raise exception 'You do not have permission to generate PIs.';
   end if;
 
-  select * into v_pi from public.proforma_invoices where id = p_id for update;
+  select draft_open into v_open from public.proforma_invoices where id = p_id;
   if not found then
     raise exception 'PI not found.';
   end if;
-  if not private.can_read_pi(p_id) then
-    raise exception 'You do not have access to this PI.';
-  end if;
-  if not v_pi.draft_open then
+  if not v_open then
     raise exception 'This PI is already issued. Download it from version history, or create a revision.';
   end if;
 
   if private.has_flag('can_edit_drafts') then
     perform private.persist_draft(p_id, p_expected_version, p_payload);
-  elsif v_pi.draft_version <> p_expected_version then
-    raise exception 'This draft was updated by someone else. Reload the draft and try again.'
-      using errcode = '40001';
+  else
+    select preset_code into v_saved_preset from public.proforma_invoices where id = p_id;
+    perform private.lock_preset_configurations(array[nullif(p_payload ->> 'preset_code', ''), v_saved_preset]);
+    select * into v_pi from public.proforma_invoices where id = p_id for update;
+    if not found then
+      raise exception 'PI not found.';
+    end if;
+    if not private.can_read_pi(p_id) then
+      raise exception 'You do not have access to this PI.';
+    end if;
+    if not v_pi.draft_open then
+      raise exception 'This PI is already issued. Download it from version history, or create a revision.';
+    end if;
+    if v_pi.draft_version <> p_expected_version then
+      raise exception 'This draft was updated by someone else. Reload the draft and try again.'
+        using errcode = '40001';
+    end if;
   end if;
 
   perform private.assert_pi_ready(p_id);
@@ -912,16 +1033,21 @@ begin
   v_year := extract(year from v_pi.pi_date)::integer;
 
   if v_pi.pi_number is null then
-    v_serial := private.allocate_serial(v_preset.sequence_code, v_year);
+    if v_preset.office is distinct from v_pi.office
+      or v_preset.currency is distinct from v_pi.currency
+      or v_preset.sequence_code is distinct from v_pi.sequence_code
+      or (v_pi.numbering_prefix is not null and v_prefix is distinct from v_pi.numbering_prefix)
+    then
+      raise exception 'This preset''s office, currency, or numbering changed after the draft was saved. Reload the draft and review it before saving or issuing. Prices were not converted.';
+    end if;
+    v_serial := private.allocate_serial(v_pi.sequence_code, v_year);
     v_number := private.format_pi_number(v_prefix, v_year, v_serial);
     v_revision := 0;
     update public.proforma_invoices
     set pi_number = v_number,
         pi_year = v_year,
         serial = v_serial,
-        office = v_preset.office,
-        currency = v_preset.currency,
-        sequence_code = v_preset.sequence_code
+        numbering_prefix = coalesce(numbering_prefix, v_prefix)
     where id = p_id;
   else
     if v_pi.sequence_code is null
@@ -998,14 +1124,14 @@ begin
   from private.default_pi_dates() as dates;
 
   insert into public.proforma_invoices (
-    preset_code, office, currency, sequence_code, pi_date, expiry_date, client_id, client_contact_id,
+    preset_code, office, currency, sequence_code, numbering_prefix, pi_date, expiry_date, client_id, client_contact_id,
     bill_to, ship_to, ship_same_as_billing, customer_reference, lead_salesperson_id, created_by,
     discount_type, discount_value, shipping_amount, installation_amount, bank_charge_amount,
     tax_enabled, tax_percent, tax_excludes_shipping, tax_excludes_installation, tax_excludes_bank_charge,
     price_basis, payment_terms, delivery_terms, warranty, additional_notes, payment_schedule,
     subtotal, discount_amount, net_items, taxable_base, tax_amount, grand_total
   ) values (
-    v_source.preset_code, v_source.office, v_source.currency, v_source.sequence_code, v_date, v_expiry,
+    v_source.preset_code, v_source.office, v_source.currency, v_source.sequence_code, v_source.numbering_prefix, v_date, v_expiry,
     v_source.client_id, v_source.client_contact_id, v_source.bill_to, v_source.ship_to,
     v_source.ship_same_as_billing, v_source.customer_reference, v_source.lead_salesperson_id,
     (select auth.uid()), v_source.discount_type, v_source.discount_value, v_source.shipping_amount,

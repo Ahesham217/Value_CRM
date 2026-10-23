@@ -3,6 +3,7 @@ import {
   canonicalOfficeCode,
   canonicalSequencePrefix,
   presetFilterOptions,
+  presetIdentityChanged,
   presetReady,
   presetStatusText,
   subscriptionCurrencyMismatch,
@@ -55,6 +56,21 @@ describe("preset filters", () => {
       { code: "P-NORTH", label: "North Office — USD", archived: false },
       { code: "AE-USD", label: "UAE — USD", archived: false },
     ]);
+  });
+});
+
+describe("saved preset identity", () => {
+  const saved = { presetCode: "P-1", office: "QA", currency: "USD", sequenceCode: "QA", prefix: "QA" };
+  const preset = { code: "P-1", office: "QA", currency: "USD", sequenceCode: "QA", prefix: "QA" };
+
+  it("asks for review when the same preset changes currency, office, sequence, or prefix", () => {
+    expect(presetIdentityChanged({ saved, preset })).toBe(false);
+    expect(presetIdentityChanged({ saved, preset: { ...preset, currency: "EUR" } })).toBe(true);
+    expect(presetIdentityChanged({ saved, preset: { ...preset, office: "QB" } })).toBe(true);
+    expect(presetIdentityChanged({ saved, preset: { ...preset, sequenceCode: "AE", prefix: "AE" } })).toBe(true);
+    expect(presetIdentityChanged({ saved, preset: { ...preset, prefix: "QB" } })).toBe(true);
+    expect(presetIdentityChanged({ saved, preset: { ...preset, code: "AE-USD" } })).toBe(false);
+    expect(presetIdentityChanged({ saved: null, preset })).toBe(false);
   });
 });
 

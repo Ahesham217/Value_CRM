@@ -237,6 +237,7 @@ export type ProformaInvoice = {
   office: OfficeCode | null;
   currency: CurrencyCode | null;
   sequence_code: string | null;
+  numbering_prefix: string | null;
   pi_year: number | null;
   serial: number | null;
   pi_number: string | null;
@@ -457,6 +458,11 @@ export type DraftPayload = {
   warranty: string;
   additional_notes: string;
   lines: DraftLineInput[];
+  expected_currency?: string | null;
+  expected_office?: string | null;
+  expected_sequence_code?: string | null;
+  expected_prefix?: string | null;
+  confirm_preset_identity?: boolean;
 };
 
 export type GenerateResult = {

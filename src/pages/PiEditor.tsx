@@ -15,7 +15,7 @@ import { adjustScheduleForSubscriptionSelection, applySubscriptionConversion, co
 import { numericInputValue } from "../lib/numeric-input";
 import { can } from "../lib/permissions";
 import { editorLineFromStored, generationBlock, isBlankPlaceholder, isResolvedLine, linesForDraft, type EditorLine } from "../lib/pi-lines";
-import { layoutLabel, presetOptionLabel, subscriptionCurrencyMismatch } from "../lib/presets";
+import { layoutLabel, PRESET_IDENTITY_REVIEW, presetIdentityChanged, presetOptionLabel, subscriptionCurrencyMismatch } from "../lib/presets";
 import { supabase } from "../lib/supabase";
 import {
   type Client,
@@ -27,6 +27,7 @@ import {
   type PiLine,
   type PiSnapshot,
   type Product,
+  type NumberingSequence,
   type ProductCommitmentOption,
   type Profile,
   type ProformaInvoice,
@@ -71,6 +72,15 @@ export function PiEditorPage() {
   const [draftOpen, setDraftOpen] = useState(true);
   const [presetCode, setPresetCode] = useState("");
   const [presets, setPresets] = useState<CompanyPreset[]>([]);
+  const [sequences, setSequences] = useState<NumberingSequence[]>([]);
+  const [savedIdentity, setSavedIdentity] = useState<{
+    presetCode: string;
+    office: string;
+    currency: string;
+    sequenceCode: string;
+    prefix: string;
+  } | null>(null);
+  const [acceptIdentity, setAcceptIdentity] = useState(false);
   const [piDate, setPiDate] = useState("");
   const [expiryDate, setExpiryDate] = useState("");
   const [clientId, setClientId] = useState("");
@@ -115,19 +125,31 @@ export function PiEditorPage() {
   const [notes, setNotes] = useState("");
 
   const selectedPreset = presets.find((preset) => preset.code === presetCode) ?? null;
+  const selectedPrefix = sequences.find((sequence) => sequence.code === selectedPreset?.sequence_code)?.prefix ?? "";
   const currency = selectedPreset?.currency ?? null;
   const currencyWarning = subscriptionCurrencyMismatch(lines, currency);
+  const identityChanged = presetIdentityChanged({
+    saved: savedIdentity,
+    preset: selectedPreset ? {
+      code: selectedPreset.code,
+      office: selectedPreset.office,
+      currency: selectedPreset.currency,
+      sequenceCode: selectedPreset.sequence_code,
+      prefix: selectedPrefix,
+    } : null,
+  });
   const officeChoices = presets
     .filter((preset) => preset.archived_at == null || preset.code === presetCode)
     .slice()
     .sort((left, right) => left.display_name.localeCompare(right.display_name) || left.code.localeCompare(right.code));
 
   async function load(piId: string) {
-    const [piResult, lineResult, salesResult, presetResult, peopleResult] = await Promise.all([
+    const [piResult, lineResult, salesResult, presetResult, sequenceResult, peopleResult] = await Promise.all([
       supabase.from("proforma_invoices").select("*").eq("id", piId).maybeSingle(),
       supabase.from("pi_lines").select("*").eq("pi_id", piId).order("position"),
       supabase.from("pi_salespeople").select("user_id").eq("pi_id", piId),
       supabase.from("company_presets").select("*"),
+      supabase.from("numbering_sequences").select("code, prefix, created_at"),
       supabase.from("profiles").select("*").eq("is_salesperson", true).order("full_name"),
     ]);
     if (piResult.error) throw piResult.error;
@@ -137,6 +159,14 @@ export function PiEditorPage() {
     setPiNumber(pi.pi_number);
     setDraftOpen(pi.draft_open);
     setPresetCode(pi.preset_code ?? "");
+    setSavedIdentity(pi.preset_code && pi.currency && pi.office && pi.sequence_code ? {
+      presetCode: pi.preset_code,
+      office: pi.office,
+      currency: pi.currency,
+      sequenceCode: pi.sequence_code,
+      prefix: pi.numbering_prefix ?? "",
+    } : null);
+    setAcceptIdentity(false);
     setPiDate(pi.pi_date ?? "");
     setExpiryDate(pi.expiry_date ?? "");
     setClientId(pi.client_id ?? "");
@@ -198,7 +228,9 @@ export function PiEditorPage() {
         billing_type: product.billing_type,
       } : null);
     }));
+    if (sequenceResult.error) throw sequenceResult.error;
     setPresets((presetResult.data ?? []) as CompanyPreset[]);
+    setSequences((sequenceResult.data ?? []) as NumberingSequence[]);
     setSalespeople((peopleResult.data ?? []) as Profile[]);
     if (pi.client_id) {
       const clientResult = await supabase.from("clients").select("*").eq("id", pi.client_id).maybeSingle();
@@ -380,6 +412,11 @@ export function PiEditorPage() {
   function payload(draftLines: DraftLineInput[]): DraftPayload {
     return {
       preset_code: presetCode || null,
+      expected_currency: selectedPreset?.currency ?? null,
+      expected_office: selectedPreset?.office ?? null,
+      expected_sequence_code: selectedPreset?.sequence_code ?? null,
+      expected_prefix: selectedPrefix || null,
+      confirm_preset_identity: identityChanged && acceptIdentity,
       pi_date: piDate || null,
       expiry_date: expiryDate || null,
       client_id: clientId || null,
@@ -554,6 +591,11 @@ export function PiEditorPage() {
 
   async function onSave() {
     if (!id || acting.current) return;
+    if (identityChanged && !acceptIdentity) {
+      setMessage(null);
+      setError(PRESET_IDENTITY_REVIEW);
+      return;
+    }
     const body = preparedPayload();
     if (!body) return;
     acting.current = true;
@@ -563,6 +605,16 @@ export function PiEditorPage() {
     try {
       const result = await saveDraft(id, draftVersion, body);
       setDraftVersion(result.draft_version);
+      if (selectedPreset) {
+        setSavedIdentity({
+          presetCode: selectedPreset.code,
+          office: selectedPreset.office,
+          currency: selectedPreset.currency,
+          sequenceCode: selectedPreset.sequence_code,
+          prefix: selectedPrefix,
+        });
+        setAcceptIdentity(false);
+      }
       if (paymentMode === "structured") setLoadedLegacy(false);
       setBaseline(fingerprint);
       setSavedNotice(true);
@@ -606,6 +658,11 @@ export function PiEditorPage() {
     acting.current = true;
     try {
       const chosen = presets.find((preset) => preset.code === presetCode) ?? null;
+      if (identityChanged && !acceptIdentity) {
+        setMessage(null);
+        setError(PRESET_IDENTITY_REVIEW);
+        return;
+      }
       if (!piNumber && chosen?.archived_at) {
         setMessage(null);
         setError("This preset is archived. Choose an active preset before issuing. A revision of an issued PI can still use it.");
@@ -802,6 +859,19 @@ export function PiEditorPage() {
         </div>
       ) : null}
       {currencyWarning ? <div className="mb-4"><Banner tone="error">{currencyWarning}</Banner></div> : null}
+      {identityChanged ? (
+        <div className="mb-4">
+          <Banner tone="error">
+            {savedIdentity ? `This preset is now ${selectedPreset?.currency ?? "a different currency"} (${selectedPreset?.office ?? "another office"}). ` : ""}
+            The saved amount stays as entered and is not converted. Review it, then confirm before saving or issuing.
+            {acceptIdentity ? "" : (
+              <button type="button" className="ml-2 underline" onClick={() => setAcceptIdentity(true)}>
+                Use the current preset identity
+              </button>
+            )}
+          </Banner>
+        </div>
+      ) : null}
 
       <div className="rounded-[10px] border border-line bg-white px-5 py-6 sm:px-7 sm:py-7 lg:px-8">
         <div className="grid gap-4 md:grid-cols-3">
@@ -813,7 +883,7 @@ export function PiEditorPage() {
                 ? `${selectedPreset.currency} · ${layoutLabel(selectedPreset.layout)}`
                 : "Choose a company preset. Prices are not converted between currencies."}
           >
-            <Select value={presetCode} disabled={!canEdit || Boolean(piNumber)} onChange={(event) => setPresetCode(event.target.value)}>
+            <Select value={presetCode} disabled={!canEdit || Boolean(piNumber)} onChange={(event) => { setAcceptIdentity(false); setPresetCode(event.target.value); }}>
               <option value="">Select a preset</option>
               {officeChoices.map((preset) => <option key={preset.code} value={preset.code}>{presetOptionLabel(preset)}</option>)}
             </Select>
