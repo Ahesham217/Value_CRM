@@ -238,13 +238,15 @@ begin
       )
     )
   then
-    -- The preset row is already locked. Lock its sequences next, in code order,
-    -- then re-read issued PIs. First issue takes the preset, then the sequence, then the PI.
+    -- The preset row is already locked by this update. Lock its sequences next,
+    -- in code order, then re-read issued PIs. FOR NO KEY UPDATE waits for another
+    -- identity or prefix change and still allows a duplicate insert's foreign-key
+    -- KEY SHARE lock. First issue takes the preset, then the sequence, then the PI.
     perform 1
     from public.numbering_sequences
     where code = any (array[old.sequence_code, new.sequence_code])
     order by code
-    for update;
+    for no key update;
     select exists (
       select 1
       from public.proforma_invoices
@@ -419,8 +421,14 @@ create unique index proforma_invoices_sequence_year_serial_key
   on public.proforma_invoices (sequence_code, pi_year, serial)
   where sequence_code is not null and pi_year is not null and serial is not null;
 
--- Lock order for preset identity and first issue: presets by code, then sequences by code, then the PI, then private.pi_counters.
-create or replace function private.lock_preset_configurations(p_codes text[])
+-- Lock order for preset identity, draft save, first issue, and duplicate:
+-- presets by code, then sequences by code, then the PI, then private.pi_counters.
+-- Presets and sequences use FOR NO KEY UPDATE. An administrator update of office,
+-- currency, sequence, or prefix waits on that lock. A foreign-key check that
+-- inserts a PI can still take its FOR KEY SHARE lock. Callers lock the PI after
+-- this returns, then read that row again.
+drop function if exists private.lock_preset_configurations(text[]);
+create or replace function private.lock_preset_configurations(p_codes text[], p_sequences text[] default '{}')
 returns void
 language plpgsql
 security definer
@@ -429,15 +437,15 @@ as $$
 declare
   v_code text;
   v_sequence text;
-  v_sequences text[] := '{}';
+  v_sequences text[] := coalesce(p_sequences, '{}');
 begin
   for v_code in
     select distinct btrim(item.code)
-    from unnest(p_codes) as item(code)
+    from unnest(coalesce(p_codes, '{}')) as item(code)
     where nullif(btrim(item.code), '') is not null
     order by 1
   loop
-    perform 1 from public.company_presets where code = v_code for update;
+    perform 1 from public.company_presets where code = v_code for no key update;
     select sequence_code into v_sequence
     from public.company_presets
     where code = v_code;
@@ -449,15 +457,15 @@ begin
   for v_sequence in
     select distinct item.seq
     from unnest(v_sequences) as item(seq)
-    where nullif(btrim(item.seq), '') is not null
+    where item.seq is not null and btrim(item.seq) <> ''
     order by 1
   loop
-    perform 1 from public.numbering_sequences where code = v_sequence for update;
+    perform 1 from public.numbering_sequences where code = v_sequence for no key update;
   end loop;
 end;
 $$;
 
-revoke all on function private.lock_preset_configurations(text[]) from public, anon, authenticated;
+revoke all on function private.lock_preset_configurations(text[], text[]) from public, anon, authenticated;
 
 create or replace function private.persist_draft(p_id uuid, p_expected_version integer, p_payload jsonb)
 returns void
@@ -1110,6 +1118,8 @@ declare
   v_id uuid;
   v_date date;
   v_expiry date;
+  v_preset text;
+  v_sequence text;
 begin
   if not private.is_active_member() or not private.has_flag('can_edit_drafts') then
     raise exception 'You do not have permission to duplicate PIs.';
@@ -1117,7 +1127,32 @@ begin
   if not private.can_read_pi(p_id) then
     raise exception 'You do not have access to this PI.';
   end if;
+
+  select pi.preset_code, pi.sequence_code
+  into v_preset, v_sequence
+  from public.proforma_invoices pi
+  where pi.id = p_id;
+  if not found then
+    raise exception 'PI not found.';
+  end if;
+
+  -- Same order as save and first issue: preset, then sequence, then the source PI.
+  -- The source is read again after that wait, and the copy uses the locked row.
+  perform private.lock_preset_configurations(array[v_preset], array[v_sequence]);
+
   select * into v_source from public.proforma_invoices where id = p_id for update;
+  if not found then
+    raise exception 'PI not found.';
+  end if;
+  if not private.can_read_pi(p_id) then
+    raise exception 'You do not have access to this PI.';
+  end if;
+  if v_source.preset_code is distinct from v_preset
+    or v_source.sequence_code is distinct from v_sequence
+  then
+    raise exception 'This draft was updated by someone else. Reload the draft and try again.'
+      using errcode = '40001';
+  end if;
 
   select dates.pi_date, dates.expiry_date
   into v_date, v_expiry
