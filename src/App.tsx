@@ -1,9 +1,12 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./auth/AuthProvider";
 import { Shell } from "./components/Shell";
+import { HOME_PATH } from "./lib/navigation";
 import { ClientDetailPage } from "./pages/ClientDetail";
 import { ClientsPage } from "./pages/Clients";
 import { LoginPage } from "./pages/Login";
+import { DashboardPage } from "./pages/Dashboard";
+import { PaymentsPage } from "./pages/Payments";
 import { PiDetailPage } from "./pages/PiDetail";
 import { PiEditorPage } from "./pages/PiEditor";
 import { PiListPage } from "./pages/PiList";
@@ -32,7 +35,9 @@ export function App() {
       <Route path="/forgot-password" element={<LoginPage mode="forgot" />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route element={<RequireAuth />}>
-        <Route path="/" element={<Navigate to="/pis" replace />} />
+        <Route path="/" element={<Navigate to={HOME_PATH} replace />} />
+        <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/payments" element={<PaymentsPage />} />
         <Route path="/pis" element={<PiListPage />} />
         <Route path="/subscriptions" element={<SubscriptionsPage />} />
         <Route path="/subscriptions/:id" element={<SubscriptionDetailPage />} />
