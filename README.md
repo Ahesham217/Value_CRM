@@ -47,7 +47,7 @@ Never put the service-role or secret key in a `VITE_` variable, frontend source,
 
 ## Migrations
 
-SQL lives in `supabase/migrations` and is the reproducible schema. Older files have been applied to Value CRM. Do not run those again. Payment tracking was applied to Value CRM on 22 October 2026 and is called out below. Do not run that file again.
+SQL lives in `supabase/migrations` and is the reproducible schema. Older files have been applied to Value CRM. Do not run those again. Payment tracking was applied to Value CRM on 22 October 2026, and administrator company presets were applied on 23 October 2026. Both are called out below. Do not run those files again.
 
 On a new database, run the files in filename order with the Supabase SQL editor or CLI:
 
@@ -112,11 +112,11 @@ Do not roll the frontend back after a receipt or subscription exists if you also
 
 `supabase/tests/payment_tracking_concurrent.sh` and `supabase/tests/payment_tracking_lock_order.sh` commit rows. Run them only on a disposable database, never on Value CRM.
 
-`20261023120000_administrator_company_presets.sql` is in the repository and has not been applied to Value CRM. Do not apply it to Verifications or Value-Website. It adds administrator-managed presets and numbering sequences. It does not rewrite issued snapshots, reset counters, or delete invoices, versions, lines, receipts, plans, subscriptions, users, or products. The original three presets, their bank details, logos, office codes, and the EG and AE counters stay as they are.
+`20261023120000_administrator_company_presets.sql` was applied to Value CRM on 23 October 2026. It was not applied to Verifications or Value-Website. Do not run the file again. The migration API recorded it as four parts, in order: `20261023204840 administrator_company_presets_schema`, `20261023205023 administrator_company_presets_drafts`, `20261023205059 administrator_company_presets_issue`, and `20261023205101 administrator_company_presets_api`. It adds administrator-managed presets and numbering sequences. It does not rewrite issued snapshots, reset counters, or delete invoices, versions, lines, receipts, plans, subscriptions, users, or products. The original three presets, their bank details, logos, office codes, and the EG and AE counters stay as they are.
 
-Apply it before serving the frontend in this revision. The current frontend can keep issuing Egypt — EGP, UAE — USD, and UAE — EUR after the migration, because those preset codes and the save and issue calls are unchanged. It will not show a preset added after the migration until the page is reloaded onto this frontend. This frontend reads `display_name`, `archived_at`, numbering sequences, and `create_company_preset`, so do not serve it before the migration.
+The current frontend can keep issuing Egypt — EGP, UAE — USD, and UAE — EUR after the migration, because those preset codes and the save and issue calls are unchanged. It will not show a preset added after the migration until the page is reloaded onto this frontend. This frontend reads `display_name`, `archived_at`, numbering sequences, and `create_company_preset`.
 
-1. Apply `20261023120000_administrator_company_presets.sql` to Value CRM only.
+1. The SQL above is already applied to Value CRM.
 2. Serve this frontend. Ask people to reload. An open tab can still issue one of the original three presets. It cannot create a preset and it will not list a new one.
 3. An administrator adds further presets in Settings → Company and bank.
 
