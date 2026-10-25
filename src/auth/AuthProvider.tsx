@@ -52,20 +52,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const sessionRef = useRef<Session | null>(null);
   const profileRef = useRef<Profile | null>(null);
   const tokenRef = useRef(0);
-  const pendingRef = useRef(0);
-
   const mountedRef = useRef(true);
+
+  const finishLoading = useCallback((token: number) => {
+    if (!mountedRef.current || tokenRef.current !== token) return;
+    setLoading(false);
+  }, []);
 
   const failAccountCheck = useCallback((token: number) => {
     if (!mountedRef.current || tokenRef.current !== token) return;
     setAccountCheckError(ACCOUNT_CHECK_FAILED_MESSAGE);
     setLoading(false);
-  }, []);
-
-  const finishPending = useCallback((token: number) => {
-    pendingRef.current = Math.max(0, pendingRef.current - 1);
-    if (!mountedRef.current || tokenRef.current !== token) return;
-    if (pendingRef.current === 0) setLoading(false);
   }, []);
 
   const applyLookup = useCallback(async (next: Session | null, token: number, lookup: ProfileLookup | null) => {
@@ -110,15 +107,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const applySession = useCallback(async (next: Session | null, token: number) => {
     if (!mountedRef.current || tokenRef.current !== token) return;
-    pendingRef.current += 1;
     try {
-      if (!mountedRef.current || tokenRef.current !== token) return;
       if (next && profileRef.current && profileRef.current.id !== next.user.id) {
         profileRef.current = null;
         setProfile(null);
       }
       sessionRef.current = next;
       setSession(next);
+      if (!mountedRef.current || tokenRef.current !== token) return;
       if (!next) {
         await applyLookup(null, token, null);
         return;
@@ -127,9 +123,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!mountedRef.current || tokenRef.current !== token) return;
       await applyLookup(next, token, lookup);
     } finally {
-      finishPending(token);
+      finishLoading(token);
     }
-  }, [applyLookup, finishPending]);
+  }, [applyLookup, finishLoading]);
 
   const acquireSession = useCallback(async (token: number) => {
     let result: Awaited<ReturnType<typeof supabase.auth.getSession>>;
@@ -151,10 +147,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const current = sessionRef.current;
     if (!current || !mountedRef.current) return;
     const token = ++tokenRef.current;
-    const lookup = await dedupeInflight(profileRequests, current.user.id, () => readProfile(current.user.id));
-    if (!mountedRef.current || tokenRef.current !== token || sessionRef.current?.user.id !== current.user.id) return;
-    await applyLookup(current, token, lookup);
-  }, [applyLookup]);
+    try {
+      const lookup = await dedupeInflight(profileRequests, current.user.id, () => readProfile(current.user.id));
+      if (!mountedRef.current || tokenRef.current !== token || sessionRef.current?.user.id !== current.user.id) return;
+      await applyLookup(current, token, lookup);
+    } finally {
+      finishLoading(token);
+    }
+  }, [applyLookup, finishLoading]);
 
   const retryAccountCheck = useCallback(async () => {
     if (!mountedRef.current) return;

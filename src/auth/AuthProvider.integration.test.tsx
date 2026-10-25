@@ -575,6 +575,148 @@ describe("account check recovery", () => {
     expect(harness.auth.signOut).not.toHaveBeenCalled();
   });
 
+  function expectSignedIn(container: ParentNode, name: string, userId: string) {
+    expect(container.textContent).toContain(`Signed in ${name}`);
+    expect(container.textContent).not.toContain("Loading…");
+    expect(container.querySelector("[data-testid=path]")?.textContent).toBe("/pis");
+    expect(button(container, "Retry")).toBeNull();
+    expect(seen.loading).toBe(false);
+    expect(seen.userId).toBe(userId);
+    expect(seen.profileId).toBe(userId);
+    expect(seen.fullName).toBe(name);
+    expect(seen.accountCheckError).toBeNull();
+    expect(seen.blockedMessage).toBeNull();
+  }
+
+  async function focusRefresh() {
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await vi.advanceTimersByTimeAsync(300);
+    });
+  }
+
+  it("finishes loading when a focus refresh resolves the shared profile read", async () => {
+    queueSession(sessionResult("user-a"));
+    const profile = deferProfile();
+    const container = renderAuth();
+    await flush();
+    expect(container.textContent).toContain("Loading…");
+    expect(seen.userId).toBe("user-a");
+    expect(seen.profileId).toBeNull();
+    expect(seen.loading).toBe(true);
+    expect(harness.profileQueue).toHaveLength(0);
+
+    await focusRefresh();
+    expect(seen.loading).toBe(true);
+    expect(harness.profileQueue).toHaveLength(0);
+    expect(container.textContent).toContain("Loading…");
+
+    await act(async () => {
+      profile.resolve({ data: profileFor("user-a", { full_name: "User A" }), error: null });
+    });
+    await flush();
+    expectSignedIn(container, "User A", "user-a");
+    expect(harness.auth.signOut).not.toHaveBeenCalled();
+  });
+
+  it("finishes loading when the shared profile read times out during a focus refresh", async () => {
+    queueSession(sessionResult("user-a"));
+    const profile = deferProfile();
+    const container = renderAuth();
+    await flush();
+    await focusRefresh();
+    expect(seen.loading).toBe(true);
+
+    await advance(PROFILE_REQUEST_TIMEOUT_MS);
+    await flush();
+    expectRetry(container);
+    expect(seen.userId).toBe("user-a");
+    expect(seen.profileId).toBeNull();
+    expect(seen.loading).toBe(false);
+    expect(harness.auth.signOut).not.toHaveBeenCalled();
+
+    await act(async () => {
+      profile.resolve({ data: profileFor("user-a", { full_name: "User A" }), error: null });
+    });
+    await flush();
+    expectRetry(container);
+    expect(seen.userId).toBe("user-a");
+    expect(seen.profileId).toBeNull();
+    expect(seen.loading).toBe(false);
+    expect(container.textContent).not.toContain("Signed in");
+    expect(harness.auth.signOut).not.toHaveBeenCalled();
+  });
+
+  it("finishes loading for a newer session before the older profile read resolves", async () => {
+    queueSession(sessionResult("user-a"));
+    const olderProfile = deferProfile();
+    const container = renderAuth();
+    await flush();
+    expect(seen.loading).toBe(true);
+    expect(seen.userId).toBe("user-a");
+
+    const newerProfile = deferProfile();
+    const listener = harness.listeners.at(-1);
+    if (!listener) throw new Error("Auth listener missing");
+    await act(async () => {
+      listener("SIGNED_IN", { user: { id: "user-b" } });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await flush();
+    expect(seen.loading).toBe(true);
+    expect(seen.userId).toBe("user-b");
+    expect(container.textContent).toContain("Loading…");
+
+    await act(async () => {
+      newerProfile.resolve({ data: profileFor("user-b", { full_name: "User B" }), error: null });
+    });
+    await flush();
+    expectSignedIn(container, "User B", "user-b");
+
+    await act(async () => {
+      olderProfile.resolve({ data: profileFor("user-a", { full_name: "User A", is_active: false }), error: null });
+    });
+    await flush();
+    expectSignedIn(container, "User B", "user-b");
+    expect(container.textContent).not.toContain("Signed in User A");
+    expect(container.textContent).not.toContain(DISABLED_ACCOUNT_MESSAGE);
+    expect(harness.auth.signOut).not.toHaveBeenCalled();
+  });
+
+  it("keeps the newer session visible when the older profile read times out", async () => {
+    queueSession(sessionResult("user-a"));
+    const olderProfile = deferProfile();
+    const container = renderAuth();
+    await flush();
+
+    const newerProfile = deferProfile();
+    const listener = harness.listeners.at(-1);
+    if (!listener) throw new Error("Auth listener missing");
+    await act(async () => {
+      listener("SIGNED_IN", { user: { id: "user-b" } });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      newerProfile.resolve({ data: profileFor("user-b", { full_name: "User B" }), error: null });
+    });
+    await flush();
+    expectSignedIn(container, "User B", "user-b");
+
+    await advance(PROFILE_REQUEST_TIMEOUT_MS);
+    await flush();
+    expectSignedIn(container, "User B", "user-b");
+    expect(harness.auth.signOut).not.toHaveBeenCalled();
+
+    await act(async () => {
+      olderProfile.resolve({ data: profileFor("user-a", { full_name: "User A" }), error: null });
+    });
+    await flush();
+    expectSignedIn(container, "User B", "user-b");
+    expect(container.textContent).not.toContain("Signed in User A");
+    expect(seen.loading).toBe(false);
+    expect(harness.auth.signOut).not.toHaveBeenCalled();
+  });
+
   it("refreshes permissions on focus without leaving the signed-in screen", async () => {
     queueSession(sessionResult("user-a"));
     queueProfile({ data: profileFor("user-a", { full_name: "Ada", can_manage_payments: false }), error: null });
