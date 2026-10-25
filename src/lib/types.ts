@@ -404,7 +404,8 @@ export type PiVersion = {
   pi_number: string;
   generated_by: string;
   generated_at: string;
-  snapshot: PiSnapshot;
+  /** Null until this version's immutable snapshot is loaded. Downloads must not substitute current records. */
+  snapshot: PiSnapshot | null;
   pdf_status: "pending" | "ready" | "issued";
   pdf_path: string | null;
   layout_version: string;

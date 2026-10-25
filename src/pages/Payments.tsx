@@ -18,6 +18,7 @@ import {
   type PaymentRegister,
 } from "../lib/reporting";
 import { supabase } from "../lib/supabase";
+import { SEARCH_DEBOUNCE_MS, useDebouncedValue } from "../lib/useDebouncedValue";
 
 export function PaymentsPage() {
   const navigate = useNavigate();
@@ -25,6 +26,8 @@ export function PaymentsPage() {
   const [params, setParams] = useSearchParams();
   const query = params.toString();
   const location = parsePaymentLocation(params);
+  const [searchText, setSearchText] = useState(location.search);
+  const debouncedSearch = useDebouncedValue(searchText, SEARCH_DEBOUNCE_MS);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [presetOptions, setPresetOptions] = useState<{ code: string; label: string }[]>([]);
   const [register, setRegister] = useState<PaymentRegister | null>(null);
@@ -86,6 +89,17 @@ export function PaymentsPage() {
     setParams(paymentSearchParams(withListChange(location, patch)));
   }
 
+  useEffect(() => {
+    setSearchText(location.search);
+  }, [location.search]);
+
+  useEffect(() => {
+    if (debouncedSearch === location.search) return;
+    update({ search: debouncedSearch });
+    // update is recreated each render and writes the debounced search into the address.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearch, location.search]);
+
   const leadName = register?.leads.find((lead) => lead.id === location.lead);
   const chips = [
     location.currency ? { id: "currency", label: `Currency: ${location.currency}` } : null,
@@ -108,7 +122,7 @@ export function PaymentsPage() {
       </div>
       <div className="mb-3">
         <Toolbar>
-          <SearchField label="Search PI or client" placeholder="Search PI or client" value={location.search} onChange={(event) => update({ search: event.target.value })} />
+          <SearchField label="Search PI or client" placeholder="Search PI or client" value={searchText} onChange={(event) => setSearchText(event.target.value)} />
           <label className="w-40 shrink-0">
             <span className="sr-only">Currency</span>
             <Select value={location.currency} onChange={(event) => update({ currency: event.target.value })}>

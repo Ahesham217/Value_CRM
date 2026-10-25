@@ -4,6 +4,7 @@ import { EmptyState, PageHeader, Pagination, Select, controlClass, tdClass, thCl
 import { errorText } from "../lib/errors";
 import { formatDate, formatQuantity } from "../lib/format";
 import { PAGE_SIZE, sanitizeSearch } from "../lib/records";
+import { SEARCH_DEBOUNCE_MS, useDebouncedValue } from "../lib/useDebouncedValue";
 import { supabase } from "../lib/supabase";
 
 type SubscriptionListRow = {
@@ -23,6 +24,7 @@ type SubscriptionListRow = {
 export function SubscriptionsPage() {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
+  const debouncedQuery = useDebouncedValue(query, SEARCH_DEBOUNCE_MS);
   const [currency, setCurrency] = useState("");
   const [state, setState] = useState("");
   const [years, setYears] = useState("");
@@ -47,7 +49,7 @@ export function SubscriptionsPage() {
     let active = true;
     setLoading(true);
     const from = (page - 1) * PAGE_SIZE;
-    const term = sanitizeSearch(query);
+    const term = sanitizeSearch(debouncedQuery);
     let request = supabase.from("subscription_list").select("*", { count: "exact" }).order("start_date", { ascending: false }).order("client_name");
     if (term) request = request.or(`client_name.ilike.%${term}%,product_model.ilike.%${term}%,product_description.ilike.%${term}%`);
     if (currency) request = request.eq("currency", currency);
@@ -66,7 +68,7 @@ export function SubscriptionsPage() {
     return () => {
       active = false;
     };
-  }, [currency, page, query, state, years]);
+  }, [currency, debouncedQuery, page, state, years]);
 
   return (
     <div>

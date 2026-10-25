@@ -1,23 +1,46 @@
 import type { Session } from "@supabase/supabase-js";
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { supabase } from "../lib/supabase";
 import type { Profile } from "../lib/types";
+import {
+  ACCOUNT_CHECK_FAILED_MESSAGE,
+  DISABLED_ACCOUNT_MESSAGE,
+  PROFILE_REQUEST_TIMEOUT_MS,
+  decideProfileApply,
+  dedupeInflight,
+  interpretProfileResponse,
+  withTimeout,
+  type ProfileLookup,
+} from "./session-guard";
 
 type AuthState = {
   session: Session | null;
   profile: Profile | null;
   loading: boolean;
   blockedMessage: string | null;
+  accountCheckError: string | null;
   refreshProfile: () => Promise<void>;
+  retryAccountCheck: () => Promise<void>;
   signOut: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthState | null>(null);
+const profileRequests = new Map<string, Promise<ProfileLookup>>();
 
-async function fetchProfile(userId: string): Promise<Profile | null> {
-  const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
-  if (error || !data || data.is_active !== true) return null;
-  return data as Profile;
+async function readProfile(userId: string): Promise<ProfileLookup> {
+  try {
+    const result = await withTimeout(
+      supabase.from("profiles").select("*").eq("id", userId).maybeSingle(),
+      PROFILE_REQUEST_TIMEOUT_MS,
+      "Account check",
+    );
+    return interpretProfileResponse({
+      error: result.error,
+      data: (result.data ?? null) as Profile | null,
+    });
+  } catch {
+    return { kind: "unavailable" };
+  }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -25,51 +48,127 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [blockedMessage, setBlockedMessage] = useState<string | null>(null);
+  const [accountCheckError, setAccountCheckError] = useState<string | null>(null);
+  const sessionRef = useRef<Session | null>(null);
+  const profileRef = useRef<Profile | null>(null);
+  const tokenRef = useRef(0);
+  const pendingRef = useRef(0);
 
-  const applySession = useCallback(async (next: Session | null) => {
-    setSession(next);
-    if (!next) {
-      setProfile(null);
-      return;
-    }
-    const nextProfile = await fetchProfile(next.user.id);
-    if (!nextProfile) {
-      await supabase.auth.signOut();
-      setSession(null);
-      setProfile(null);
-      setBlockedMessage("This account is disabled or has not been provisioned by an administrator.");
-      return;
-    }
-    setBlockedMessage(null);
-    setProfile(nextProfile);
+  const finishPending = useCallback(() => {
+    pendingRef.current = Math.max(0, pendingRef.current - 1);
+    if (pendingRef.current === 0) setLoading(false);
   }, []);
 
-  const refreshProfile = useCallback(async () => {
-    if (!session) return;
-    const nextProfile = await fetchProfile(session.user.id);
-    if (!nextProfile) {
-      await supabase.auth.signOut();
+  const applyLookup = useCallback(async (next: Session | null, token: number, lookup: ProfileLookup | null) => {
+    if (tokenRef.current !== token) return;
+    if (!next) {
+      sessionRef.current = null;
+      profileRef.current = null;
       setSession(null);
       setProfile(null);
-      setBlockedMessage("This account is disabled or has not been provisioned by an administrator.");
       return;
     }
-    setProfile(nextProfile);
-  }, [session]);
+    const decision = decideProfileApply({
+      requestToken: token,
+      currentToken: tokenRef.current,
+      requestUserId: next.user.id,
+      activeUserId: sessionRef.current?.user.id ?? null,
+      lookup: lookup ?? { kind: "unavailable" },
+    });
+    if (decision.action === "ignore") return;
+    if (decision.action === "set-profile") {
+      profileRef.current = decision.profile;
+      setProfile(decision.profile);
+      setBlockedMessage(null);
+      setAccountCheckError(null);
+      return;
+    }
+    if (decision.action === "keep-session-unavailable") {
+      if (!profileRef.current) setAccountCheckError(ACCOUNT_CHECK_FAILED_MESSAGE);
+      return;
+    }
+    tokenRef.current += 1;
+    sessionRef.current = null;
+    profileRef.current = null;
+    setBlockedMessage(DISABLED_ACCOUNT_MESSAGE);
+    setAccountCheckError(null);
+    setSession(null);
+    setProfile(null);
+    await supabase.auth.signOut();
+  }, []);
+
+  const applySession = useCallback(async (next: Session | null, token: number) => {
+    if (tokenRef.current !== token) return;
+    pendingRef.current += 1;
+    if (next && profileRef.current && profileRef.current.id !== next.user.id) {
+      profileRef.current = null;
+      setProfile(null);
+    }
+    sessionRef.current = next;
+    setSession(next);
+    try {
+      if (tokenRef.current !== token) return;
+      if (!next) {
+        await applyLookup(null, token, null);
+        return;
+      }
+      const lookup = await dedupeInflight(profileRequests, next.user.id, () => readProfile(next.user.id));
+      await applyLookup(next, token, lookup);
+    } finally {
+      finishPending();
+    }
+  }, [applyLookup, finishPending]);
+
+  const refreshProfile = useCallback(async () => {
+    const current = sessionRef.current;
+    if (!current) return;
+    const token = ++tokenRef.current;
+    const lookup = await dedupeInflight(profileRequests, current.user.id, () => readProfile(current.user.id));
+    if (tokenRef.current !== token || sessionRef.current?.user.id !== current.user.id) return;
+    await applyLookup(current, token, lookup);
+  }, [applyLookup]);
+
+  const retryAccountCheck = useCallback(async () => {
+    setLoading(true);
+    setAccountCheckError(null);
+    const { data, error } = await supabase.auth.getSession();
+    if (error) {
+      setAccountCheckError(ACCOUNT_CHECK_FAILED_MESSAGE);
+      setLoading(false);
+      return;
+    }
+    const token = ++tokenRef.current;
+    await applySession(data.session, token);
+  }, [applySession]);
+
+  const signOut = useCallback(async () => {
+    tokenRef.current += 1;
+    sessionRef.current = null;
+    profileRef.current = null;
+    setSession(null);
+    setProfile(null);
+    setAccountCheckError(null);
+    await supabase.auth.signOut();
+  }, []);
 
   useEffect(() => {
     let active = true;
-    supabase.auth.getSession().then(({ data }) => {
-      if (!active) return;
-      void applySession(data.session).finally(() => {
-        if (active) setLoading(false);
-      });
-    });
+    const getSessionToken = ++tokenRef.current;
     const { data } = supabase.auth.onAuthStateChange((_event, next) => {
+      const token = ++tokenRef.current;
       setTimeout(() => {
-        if (!active) return;
-        void applySession(next);
+        if (!active || tokenRef.current !== token) return;
+        void applySession(next, token);
       }, 0);
+    });
+    void supabase.auth.getSession().then(({ data: sessionData, error }) => {
+      if (!active || tokenRef.current !== getSessionToken) return;
+      if (error) {
+        setAccountCheckError(ACCOUNT_CHECK_FAILED_MESSAGE);
+        setLoading(false);
+        return;
+      }
+      void applySession(sessionData.session, getSessionToken);
     });
     return () => {
       active = false;
@@ -78,12 +177,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [applySession]);
 
   useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
     function onFocus() {
-      if (session) void refreshProfile();
+      if (!sessionRef.current) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        void refreshProfile();
+      }, 300);
     }
     window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, [refreshProfile, session]);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      if (timer) clearTimeout(timer);
+    };
+  }, [refreshProfile]);
 
   const value = useMemo<AuthState>(
     () => ({
@@ -91,14 +198,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       profile,
       loading,
       blockedMessage,
+      accountCheckError,
       refreshProfile,
-      signOut: async () => {
-        await supabase.auth.signOut();
-        setSession(null);
-        setProfile(null);
-      },
+      retryAccountCheck,
+      signOut,
     }),
-    [blockedMessage, loading, profile, refreshProfile, session],
+    [accountCheckError, blockedMessage, loading, profile, refreshProfile, retryAccountCheck, session, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

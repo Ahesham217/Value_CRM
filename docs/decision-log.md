@@ -327,3 +327,19 @@ Value CRM already has `proforma_invoices.payment_schedule`, the payment function
   - User permissions are grouped for reading under PI access, Directory management, Payments, and Administration. Each checkbox still writes the same flag. No role bundles were added.
   - PDF layout, snapshots, permissions, money, numbering, and database functions are unchanged. This decision does not deploy the frontend and does not apply a migration.
 - References: `src/index.css`, `src/components/ui.tsx`, `src/components/Shell.tsx`, `docs/ui-guidelines.md`, `README.md`
+
+## DEC-023
+
+- Decision date: 2026-10-25
+- Documented: 2026-10-25
+- Status: Implemented in this frontend. Not deployed. No migration was added or applied.
+- Decision: Keep page loads from waiting on duplicate account checks, stale auth responses, or data the screen does not need yet. A failed account check is not treated as a disabled account.
+- Reason: Staff reported that opening or switching pages sometimes took more than 15 seconds or appeared stuck. The live database had little business data, so the wait was not explained by row counts.
+- Consequences or limitations:
+  - Measured on Value CRM on 25 October 2026, read-only: 3 proforma invoices, 5 versions, 8 lines, 3 presets, 4 clients, and 7 products. All five snapshots together were 16,389 bytes of text, the largest was 3,949 bytes, and none contained a logo. The three preset rows were 2,400 bytes and also had no logo text. `pg_stat_statements` showed PI list reads around a mean of 10 ms (maximum 18 ms), active PI reports around a mean of 9 ms (maximum 86 ms), and collection summaries around a mean of 16 ms (maximum 46 ms). Auth token requests in that day’s logs completed in well under a second. Those figures do not by themselves explain a 15 second wait. Edge request timings were not available in the log fields that were queried. No page was timed in a browser.
+  - `getSession` and auth events can both ask for the profile. Equivalent in-flight profile reads share one request. A late response cannot restore a signed-out user or replace a newer session. A transport failure or an account check that does not finish within 8 seconds keeps the session and asks for Retry. Only a profile that is missing or inactive signs the person out, with the existing disabled-account message. Focus still refreshes permissions, without blocking the shell and without overlapping the same profile read.
+  - Text search waits 300 ms after the last keystroke. An older list response cannot replace a newer one.
+  - The PI screen loads version metadata and the latest snapshot first. Another version’s snapshot is loaded for payment tracking or Download, and only from that version. Current company records are not used in its place.
+  - The PI editor loads preset rows without the logo file. Preview loads that preset’s logo when it needs it. Product, client, and contact reads for a draft run together instead of one after another.
+  - No persistent cache of business data was added. No database migration was added. PDF rendering is still loaded only when a preview or download runs.
+- References: `src/auth/AuthProvider.tsx`, `src/auth/session-guard.ts`, `src/lib/pi-versions.ts`, `src/lib/useDebouncedValue.ts`, `src/pages/PiDetail.tsx`, `src/pages/PiEditor.tsx`, `README.md`
