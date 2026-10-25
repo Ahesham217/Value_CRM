@@ -2,18 +2,25 @@ import { formatDate } from "./format";
 import { addDays, formatIsoDate, parseIsoDate } from "./payment-schedule";
 import type { CurrencyCode, DisplayStatus } from "./types";
 
+export type { CurrencyCode };
+
 export const PAYMENT_TRACKING_ANCHOR = "payment-tracking";
 
 export const PI_PERIODS = ["last_7", "this_month", "last_30", "custom", "all"] as const;
 export const RECEIPT_PERIODS = ["last_7", "this_month", "last_30", "custom"] as const;
 export const PAYMENT_VIEWS = ["outstanding", "overdue", "due_today", "next_7", "next_30", "awaiting", "paid", "all"] as const;
 export const COLLECTION_BUCKETS = ["outstanding", "overdue", "due_today", "next_7", "next_30", "unresolved"] as const;
+export const DUE_BUCKETS = ["overdue", "due_today", "due_1_7", "due_8_30", "due_after_30", "unresolved"] as const;
 export const REPORT_CURRENCIES = ["EGP", "USD", "EUR"] as const satisfies readonly CurrencyCode[];
+export const DASHBOARD_CURRENCIES = ["USD", "EGP", "EUR"] as const satisfies readonly CurrencyCode[];
+export const PI_STATUSES = ["draft", "issued", "sent", "accepted"] as const;
 
 export type PiPeriod = (typeof PI_PERIODS)[number];
 export type ReceiptPeriod = (typeof RECEIPT_PERIODS)[number];
 export type PaymentView = (typeof PAYMENT_VIEWS)[number];
 export type CollectionBucket = (typeof COLLECTION_BUCKETS)[number];
+export type DueBucket = (typeof DUE_BUCKETS)[number];
+export type PiStatus = (typeof PI_STATUSES)[number];
 
 export const PI_PERIOD_LABELS: Record<PiPeriod, string> = {
   last_7: "Last 7 days",
@@ -50,11 +57,23 @@ export const COLLECTION_BUCKET_LABELS: Record<CollectionBucket, string> = {
   unresolved: "Date not set",
 };
 
+export const DUE_BUCKET_LABELS: Record<DueBucket, string> = {
+  overdue: "Overdue",
+  due_today: "Due today",
+  due_1_7: "Due in 1–7 days",
+  due_8_30: "Due in 8–30 days",
+  due_after_30: "Due after 30 days",
+  unresolved: "Date not set",
+};
+
 export const ACTIVE_PI_NOTE =
   "Active PIs are drafts, issued, sent, and accepted documents. Cancelled PIs are left out. Each PI is counted once. The amount is the latest issued revision, or the saved draft total when nothing has been issued. An open revision does not change that issued total. These are quoted amounts, not revenue.";
 
 export const COLLECTION_NOTE =
-  "Tracked balances use the remaining amount on each payment obligation. They do not follow the PI date above, and they are not revenue. EGP, USD, and EUR stay separate. Overdue means the due date is before today. Due today is today. The next 7 days and the next 30 days both start tomorrow, and the next 7 days sit inside the next 30 days. A zero means nothing tracked is due in that window. It does not mean every invoice has been paid.";
+  "Tracked balances use the remaining amount on each payment obligation. They do not follow the PI period, and they are not revenue. EGP, USD, and EUR stay separate. The chart splits that remaining balance into overdue, due today, due in 1–7 days, due in 8–30 days, due after 30 days, and date not set. Those ranges do not overlap. Overdue means a fixed due date before today. Due today is today. Due in 1–7 days starts tomorrow and ends seven days from today. Due in 8–30 days starts eight days from today. A date that is not set is not overdue. The detail links for next 7 days and next 30 days both start tomorrow, and the next 7 days sit inside the next 30 days. A zero means nothing tracked is due in that window. It does not mean every offer has been paid, and it does not mean a payment plan exists.";
+
+export const TRACKING_NOTE =
+  "Payment terms describe the agreement. A payment plan starts only when someone starts payment tracking on an agreed issued version. Issuing, sending, or accepting an offer does not start a plan and does not mean the customer owes the quoted amount.";
 
 export const PAYMENTS_NOTE =
   "Each row is one obligation already on a payment plan, including a separate instalment or subscription advance. Future subscription years that have not been invoiced are not listed. This page does not record payments.";
@@ -144,11 +163,15 @@ export type ActivePiRow = {
   latestRevision: number | null;
 };
 
+export type StatusCounts = Record<PiStatus, number>;
+
 export type ActiveReport = {
   count: number;
   set: "active" | "untracked";
   period: DateWindow & { today: string };
   totals: QuotedTotal[];
+  statusCounts: StatusCounts;
+  currencies: CurrencyCode[];
   rows: ActivePiRow[];
   leads: ReportLead[];
 };
@@ -161,6 +184,10 @@ export type CollectionCurrency = {
   next7: string;
   next30: string;
   unresolved: string;
+  due1To7: string;
+  due8To30: string;
+  dueAfter30: string;
+  planCount: number;
   received: string;
 };
 
@@ -216,6 +243,22 @@ export type PaymentRegister = {
   totals: PaymentTotal[];
   rows: PaymentRow[];
   leads: ReportLead[];
+};
+
+export type DashboardLocation = {
+  currency: "" | CurrencyCode;
+  period: PiPeriod;
+  from: string;
+  to: string;
+  status: "" | PiStatus;
+  preset: string;
+  lead: string;
+  search: string;
+  page: number;
+  receiptPeriod: ReceiptPeriod;
+  receiptFrom: string;
+  receiptTo: string;
+  parentStatus: "" | "issued" | "sent" | "accepted" | "cancelled";
 };
 
 export type PaymentLocation = {
@@ -280,6 +323,16 @@ function readCurrency(value: unknown): CurrencyCode {
   return value;
 }
 
+function readStatusCounts(value: unknown): StatusCounts {
+  const row = readObject(value, "The status counts");
+  return {
+    draft: readCount(row.draft),
+    issued: readCount(row.issued),
+    sent: readCount(row.sent),
+    accepted: readCount(row.accepted),
+  };
+}
+
 function readLeads(value: unknown): ReportLead[] {
   if (!Array.isArray(value)) throw new Error("The lead list could not be read.");
   return value.map((item) => {
@@ -294,7 +347,9 @@ export function readActiveReport(data: unknown): ActiveReport {
   const period = readObject(row.period, "The PI date");
   const set = row.set === "untracked" ? "untracked" : row.set === "active" ? "active" : null;
   if (!set) throw new Error("The PI report could not be read.");
-  if (!Array.isArray(row.totals) || !Array.isArray(row.rows)) throw new Error("The PI report could not be read.");
+  if (!Array.isArray(row.totals) || !Array.isArray(row.rows) || !Array.isArray(row.currencies)) {
+    throw new Error("The PI report could not be read.");
+  }
   return {
     count: readCount(row.count),
     set,
@@ -304,6 +359,8 @@ export function readActiveReport(data: unknown): ActiveReport {
       end: readDate(period.end, "The PI date"),
       today: readDate(period.today, "The PI date") ?? "",
     },
+    statusCounts: readStatusCounts(row.status_counts),
+    currencies: row.currencies.map((item) => readCurrency(item)),
     totals: row.totals.map((item) => {
       const total = readObject(item, "A quoted total");
       return {
@@ -358,6 +415,10 @@ export function readCollectionSummary(data: unknown): CollectionSummary {
       next7: readMoney(money.next_7, "The next 7 days"),
       next30: readMoney(money.next_30, "The next 30 days"),
       unresolved: readMoney(money.unresolved, "An unresolved balance"),
+      due1To7: readMoney(money.due_1_7, "Due in 1–7 days"),
+      due8To30: readMoney(money.due_8_30, "Due in 8–30 days"),
+      dueAfter30: readMoney(money.due_after_30, "Due after 30 days"),
+      planCount: readCount(money.plan_count),
       received: readMoney(money.received, "Received"),
     };
   });
@@ -488,6 +549,153 @@ export function paymentsPath(location: Partial<PaymentLocation> & { view: Paymen
   const params = paymentSearchParams({ ...emptyPaymentLocation(), ...location, page: location.page ?? 1 });
   const query = params.toString();
   return query ? `/payments?${query}` : "/payments";
+}
+
+export function emptyDashboardLocation(): DashboardLocation {
+  return {
+    currency: "",
+    period: "last_7",
+    from: "",
+    to: "",
+    status: "",
+    preset: "",
+    lead: "",
+    search: "",
+    page: 1,
+    receiptPeriod: "last_7",
+    receiptFrom: "",
+    receiptTo: "",
+    parentStatus: "",
+  };
+}
+
+export function parseDashboardLocation(params: URLSearchParams): DashboardLocation {
+  const period = PI_PERIODS.find((item) => item === params.get("period")) ?? "last_7";
+  const receiptPeriod = RECEIPT_PERIODS.find((item) => item === params.get("received")) ?? "last_7";
+  const page = Number(params.get("page") ?? "1");
+  const status = PI_STATUSES.find((item) => item === params.get("status")) ?? "";
+  const parentStatus = (["issued", "sent", "accepted", "cancelled"] as const).find((item) => item === params.get("pi_status")) ?? "";
+  return {
+    currency: REPORT_CURRENCIES.find((item) => item === params.get("currency")) ?? "",
+    period,
+    from: /^\d{4}-\d{2}-\d{2}$/.test(params.get("from") ?? "") ? (params.get("from") as string) : "",
+    to: /^\d{4}-\d{2}-\d{2}$/.test(params.get("to") ?? "") ? (params.get("to") as string) : "",
+    status,
+    preset: params.get("preset") ?? "",
+    lead: params.get("lead") ?? "",
+    search: params.get("q") ?? "",
+    page: Number.isInteger(page) && page > 0 ? page : 1,
+    receiptPeriod,
+    receiptFrom: /^\d{4}-\d{2}-\d{2}$/.test(params.get("received_from") ?? "") ? (params.get("received_from") as string) : "",
+    receiptTo: /^\d{4}-\d{2}-\d{2}$/.test(params.get("received_to") ?? "") ? (params.get("received_to") as string) : "",
+    parentStatus,
+  };
+}
+
+export function dashboardSearchParams(location: DashboardLocation): URLSearchParams {
+  const params = new URLSearchParams();
+  if (location.currency) params.set("currency", location.currency);
+  if (location.period !== "last_7") params.set("period", location.period);
+  if (location.period === "custom" && location.from) params.set("from", location.from);
+  if (location.period === "custom" && location.to) params.set("to", location.to);
+  if (location.status) params.set("status", location.status);
+  if (location.preset) params.set("preset", location.preset);
+  if (location.lead) params.set("lead", location.lead);
+  if (location.search) params.set("q", location.search);
+  if (location.page > 1) params.set("page", String(location.page));
+  if (location.receiptPeriod !== "last_7") params.set("received", location.receiptPeriod);
+  if (location.receiptPeriod === "custom" && location.receiptFrom) params.set("received_from", location.receiptFrom);
+  if (location.receiptPeriod === "custom" && location.receiptTo) params.set("received_to", location.receiptTo);
+  if (location.parentStatus) params.set("pi_status", location.parentStatus);
+  return params;
+}
+
+export function dashboardPath(location: DashboardLocation, hash = ""): string {
+  const query = dashboardSearchParams(location).toString();
+  return `/dashboard${query ? `?${query}` : ""}${hash}`;
+}
+
+export function chooseDashboardCurrency(input: {
+  explicit: CurrencyCode | null;
+  piCurrencies: readonly CurrencyCode[];
+  planCounts: Partial<Record<CurrencyCode, number>>;
+}): CurrencyCode {
+  if (input.explicit) return input.explicit;
+  const withPis = DASHBOARD_CURRENCIES.find((currency) => input.piCurrencies.includes(currency));
+  if (withPis) return withPis;
+  const withPlans = DASHBOARD_CURRENCIES.find((currency) => (input.planCounts[currency] ?? 0) > 0);
+  if (withPlans) return withPlans;
+  return "USD";
+}
+
+export function quotedForCurrency(totals: readonly QuotedTotal[], currency: CurrencyCode): QuotedTotal {
+  return totals.find((total) => total.currency === currency) ?? { currency, issued: "0.00", draft: "0.00" };
+}
+
+export function collectionForCurrency(summary: CollectionSummary, currency: CurrencyCode): CollectionCurrency {
+  const found = summary.currencies.find((item) => item.currency === currency);
+  if (!found) throw new Error("The collection summary could not be read.");
+  return found;
+}
+
+export function moneyIsPositive(value: string): boolean {
+  return /^\d+\.\d{2}$/.test(value) && value !== "0.00";
+}
+
+export function statusCountTotal(counts: StatusCounts): number {
+  return PI_STATUSES.reduce((sum, status) => sum + counts[status], 0);
+}
+
+export function dueBucketAmount(row: CollectionCurrency, bucket: DueBucket): string {
+  switch (bucket) {
+    case "overdue":
+      return row.overdue;
+    case "due_today":
+      return row.dueToday;
+    case "due_1_7":
+      return row.due1To7;
+    case "due_8_30":
+      return row.due8To30;
+    case "due_after_30":
+      return row.dueAfter30;
+    case "unresolved":
+      return row.unresolved;
+  }
+}
+
+export function dueBucketPath(input: {
+  bucket: DueBucket;
+  currency: CurrencyCode;
+  today: string;
+  parentStatus?: string;
+}): string {
+  const parentStatus = input.parentStatus ?? "";
+  const currency = input.currency;
+  switch (input.bucket) {
+    case "overdue":
+      return paymentsPath({ view: "overdue", currency, parentStatus });
+    case "due_today":
+      return paymentsPath({ view: "due_today", currency, parentStatus });
+    case "due_1_7":
+      return paymentsPath({ view: "next_7", currency, parentStatus });
+    case "due_8_30":
+      return paymentsPath({
+        view: "outstanding",
+        currency,
+        parentStatus,
+        dueFrom: addDays(input.today, 8),
+        dueTo: addDays(input.today, 30),
+      });
+    case "due_after_30":
+      return paymentsPath({
+        view: "outstanding",
+        currency,
+        parentStatus,
+        dueFrom: addDays(input.today, 31),
+      });
+    case "unresolved":
+      return paymentsPath({ view: "awaiting", balance: "outstanding", currency, parentStatus });
+  }
 }
 
 export function collectionPath(input: { bucket: CollectionBucket; currency?: string; parentStatus?: string }): string {

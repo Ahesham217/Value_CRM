@@ -1,19 +1,26 @@
 import { describe, expect, it } from "vitest";
 import { HOME_PATH, mainNavigation } from "./navigation";
+import { addDays } from "./payment-schedule";
 import {
+  chooseDashboardCurrency,
   collectionPath,
   coverageText,
   customRangeMessage,
+  dueBucketPath,
   keepPreviousOnFailure,
   leadLabel,
+  moneyIsPositive,
+  parseDashboardLocation,
   parsePaymentLocation,
   paymentSearchParams,
   paymentTrackingPath,
   paymentsPath,
+  quotedForCurrency,
   readActiveReport,
   readCollectionSummary,
   reportingWindow,
   showsOverdueMarker,
+  statusCountTotal,
   withListChange,
   type PaymentRow,
 } from "./reporting";
@@ -65,7 +72,8 @@ describe("reporting access and money parsing", () => {
   });
 
   it("rejects a payload that would look like a zero total", () => {
-    expect(() => readActiveReport({ count: 0, set: "active", period: { unbounded: true, start: null, end: null, today: "2026-10-24" }, totals: [{ currency: "EGP" }], rows: [], leads: [] })).toThrow(/quoted total/);
+    expect(() => readActiveReport({ count: 0, set: "active", period: { unbounded: true, start: null, end: null, today: "2026-10-24" }, totals: [{ currency: "EGP" }], rows: [], leads: [], currencies: [], status_counts: { draft: 0, issued: 0, sent: 0, accepted: 0 } })).toThrow(/quoted total/);
+    expect(() => readActiveReport({ count: 0, set: "active", period: { unbounded: true, start: null, end: null, today: "2026-10-24" }, totals: [], rows: [], leads: [], currencies: [] })).toThrow(/status counts/);
     expect(() => readCollectionSummary({ today: "2026-10-24", parent_status: null, receipt_period: { start: "2026-10-18", end: "2026-10-24" }, currencies: [], untracked_count: 0 })).toThrow(/collection summary/);
   });
 
@@ -80,10 +88,73 @@ describe("reporting access and money parsing", () => {
       ],
       rows: [],
       leads: [{ id: "11111111-1111-4111-8111-111111111111", name: "Ada", active: false }],
+      currencies: ["EGP", "USD"],
+      status_counts: { draft: 1, issued: 1, sent: 0, accepted: 0 },
     });
     expect(report.totals.map((total) => total.currency)).toEqual(["EGP", "USD"]);
     expect(report.totals[0]?.issued).toBe("1000.10");
+    expect(quotedForCurrency(report.totals, "USD").draft).toBe("20.00");
+    expect(quotedForCurrency(report.totals, "EUR")).toEqual({ currency: "EUR", issued: "0.00", draft: "0.00" });
+    expect(statusCountTotal(report.statusCounts)).toBe(2);
     expect(report.leads[0]?.active).toBe(false);
+    expect(moneyIsPositive("0.00")).toBe(false);
+    expect(moneyIsPositive("0.01")).toBe(true);
+  });
+});
+
+const money = {
+  outstanding: "0.00",
+  overdue: "0.00",
+  due_today: "0.00",
+  next_7: "0.00",
+  next_30: "0.00",
+  unresolved: "0.00",
+  due_1_7: "0.00",
+  due_8_30: "0.00",
+  due_after_30: "0.00",
+  plan_count: 0,
+  received: "0.00",
+};
+
+describe("dashboard currency and due buckets", () => {
+  it("keeps an explicit currency and otherwise chooses visible activity, with USD last", () => {
+    expect(chooseDashboardCurrency({ explicit: "EUR", piCurrencies: ["USD"], planCounts: { EGP: 1 } })).toBe("EUR");
+    expect(chooseDashboardCurrency({ explicit: null, piCurrencies: ["EGP", "USD"], planCounts: {} })).toBe("USD");
+    expect(chooseDashboardCurrency({ explicit: null, piCurrencies: ["EGP"], planCounts: { USD: 4 } })).toBe("EGP");
+    expect(chooseDashboardCurrency({ explicit: null, piCurrencies: [], planCounts: { EUR: 1 } })).toBe("EUR");
+    expect(chooseDashboardCurrency({ explicit: null, piCurrencies: [], planCounts: {} })).toBe("USD");
+    expect(parseDashboardLocation(new URLSearchParams("currency=EGP&period=this_month")).currency).toBe("EGP");
+    expect(parseDashboardLocation(new URLSearchParams("currency=GBP")).currency).toBe("");
+  });
+
+  it("opens each disjoint due bucket on its own payment range", () => {
+    const today = "2026-10-24";
+    expect(dueBucketPath({ bucket: "overdue", currency: "USD", today })).toBe("/payments?view=overdue&currency=USD");
+    expect(dueBucketPath({ bucket: "due_today", currency: "USD", today })).toBe("/payments?view=due_today&currency=USD");
+    expect(dueBucketPath({ bucket: "due_1_7", currency: "EGP", today, parentStatus: "cancelled" })).toBe("/payments?view=next_7&currency=EGP&pi_status=cancelled");
+    expect(dueBucketPath({ bucket: "due_8_30", currency: "USD", today })).toBe(
+      `/payments?view=outstanding&currency=USD&due_from=${addDays(today, 8)}&due_to=${addDays(today, 30)}`,
+    );
+    expect(dueBucketPath({ bucket: "due_after_30", currency: "EUR", today })).toBe(
+      `/payments?view=outstanding&currency=EUR&due_from=${addDays(today, 31)}`,
+    );
+    const unresolved = dueBucketPath({ bucket: "unresolved", currency: "USD", today });
+    expect(unresolved).toContain("view=awaiting");
+    expect(unresolved).toContain("balance=outstanding");
+    expect(unresolved).not.toContain("view=overdue");
+    expect(dueBucketPath({ bucket: "due_8_30", currency: "USD", today: "2026-01-31" })).toContain("due_from=2026-02-08");
+    expect(dueBucketPath({ bucket: "due_8_30", currency: "USD", today: "2026-01-31" })).toContain("due_to=2026-03-02");
+    expect(readCollectionSummary({
+      today,
+      parent_status: null,
+      receipt_period: { start: "2026-10-18", end: today },
+      untracked_count: 0,
+      currencies: [
+        { currency: "EGP", ...money, plan_count: 0 },
+        { currency: "USD", ...money, outstanding: "40.00", overdue: "10.00", due_1_7: "5.00", due_8_30: "15.00", due_after_30: "7.00", unresolved: "3.00", plan_count: 2, received: "8.00" },
+        { currency: "EUR", ...money },
+      ],
+    }).currencies[1]).toMatchObject({ due1To7: "5.00", due8To30: "15.00", dueAfter30: "7.00", planCount: 2, received: "8.00" });
   });
 });
 

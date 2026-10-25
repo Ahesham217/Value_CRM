@@ -5,6 +5,7 @@ import { collectionLabel } from "../lib/payment-tracking";
 import {
   ACTIVE_PI_NOTE,
   COLLECTION_BUCKET_LABELS,
+  TRACKING_NOTE,
   COLLECTION_BUCKETS,
   COLLECTION_NOTE,
   EMPTY_PAYMENTS,
@@ -221,8 +222,9 @@ export function FiguresDisclosure() {
     <Disclosure title="How these figures work" open={open} onToggle={() => setOpen((current) => !current)}>
       <div className="max-w-3xl space-y-2 text-sm text-secondary">
         <p>{ACTIVE_PI_NOTE}</p>
+        <p>{TRACKING_NOTE}</p>
         <p>{COLLECTION_NOTE}</p>
-        <p>Quoted totals are not unpaid balances. A PI without a payment plan is counted separately, and its quoted total is not turned into an outstanding amount.</p>
+        <p>Quoted totals are not unpaid balances. An offer without a payment plan is not given an outstanding amount.</p>
       </div>
     </Disclosure>
   );
