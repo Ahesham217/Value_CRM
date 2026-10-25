@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
+import { usePageCrumbs } from "../components/page-chrome";
 import { Banner, Button, Disclosure, Field, Menu, PageHeader, TextArea, buttonClass, controlClass } from "../components/ui";
 import { errorText } from "../lib/errors";
 import { can } from "../lib/permissions";
@@ -119,7 +120,12 @@ export function VendorDetailPage() {
     }
   }
 
-  if (loading) return <p className="text-sm text-slate-600">Loading vendor…</p>;
+  usePageCrumbs([
+    { label: "Vendors", to: "/vendors" },
+    { label: isNew ? "New vendor" : companyName || "Vendor" },
+  ]);
+
+  if (loading) return <p className="text-sm text-muted">Loading vendor…</p>;
 
   const featured = contacts[0] ?? emptyContact();
   const additional = contacts.slice(1);
@@ -141,7 +147,7 @@ export function VendorDetailPage() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-3">
+    <form onSubmit={onSubmit} className="w-full max-w-[1120px] space-y-3">
       <PageHeader
         title={isNew ? "New vendor" : companyName || "Vendor"}
         subtitle={archivedAt ? "Archived. Products and invoice history stay linked." : undefined}
@@ -171,7 +177,7 @@ export function VendorDetailPage() {
       {error ? <Banner tone="error">{error}</Banner> : null}
       {message ? <Banner tone="success">{message}</Banner> : null}
       {!manage ? <Banner tone="info">You can view this vendor. An administrator has not given you permission to change vendors.</Banner> : null}
-      <section className="rounded-[10px] border border-line bg-white p-6">
+      <section className="rounded-lg border border-line bg-white p-6">
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Company name"><input className={controlClass} required disabled={!manage} value={companyName} onChange={(event) => setCompanyName(event.target.value)} /></Field>
           <Field label="Country"><input className={controlClass} disabled={!manage} value={country} onChange={(event) => setCountry(event.target.value)} /></Field>
@@ -195,7 +201,7 @@ export function VendorDetailPage() {
           </div>
         </Disclosure>
         <Disclosure title="Additional contacts" summary={additionalSummary} open={contactsOpen} onToggle={() => setContactsOpen((current) => !current)}>
-          {additional.length === 0 ? <p className="text-sm text-slate-600">No additional contacts.</p> : (
+          {additional.length === 0 ? <p className="text-sm text-muted">No additional contacts.</p> : (
             <div className="space-y-3">
               {additional.map((contact) => (
                 <div key={contact.key} className="rounded-lg border border-line p-3">
@@ -208,14 +214,14 @@ export function VendorDetailPage() {
         </Disclosure>
       </section>
       {id ? (
-        <section className="rounded-[10px] border border-line bg-white px-6">
+        <section className="rounded-lg border border-line bg-white px-6">
           <Disclosure
             title="Related products"
             summary={products.length === 0 ? "None yet" : `${products.length} product${products.length === 1 ? "" : "s"}`}
             open={productsOpen}
             onToggle={() => setProductsOpen((current) => !current)}
           >
-            {products.length === 0 ? <p className="text-sm text-slate-600">No products for this vendor yet.</p> : (
+            {products.length === 0 ? <p className="text-sm text-muted">No products for this vendor yet.</p> : (
               <ul className="space-y-1 text-sm">
                 {products.map((product) => (
                   <li key={product.id}><Link className="text-navy-800 underline" to={`/products/${product.id}`}>{product.model_code}</Link></li>

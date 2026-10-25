@@ -5,14 +5,26 @@ import {
   ActivePiTable,
   CollectionSummaryTable,
   CoverageNote,
+  FiguresDisclosure,
   PeriodChoices,
-  ReportCopy,
-  activePiCopy,
-  collectionCopy,
   piPeriodChoices,
   receiptPeriodChoices,
 } from "../components/ReportingViews";
-import { Button, EmptyState, FilterChip, PageHeader, Pagination, Select, controlClass } from "../components/ui";
+import {
+  EmptyState,
+  Field,
+  FilterChip,
+  FilterPanel,
+  FiltersButton,
+  LoadingNote,
+  PageHeader,
+  Pagination,
+  SearchField,
+  Select,
+  Toolbar,
+  controlClass,
+  quietActionClass,
+} from "../components/ui";
 import { errorText } from "../lib/errors";
 import { displayStatusLabel } from "../lib/format";
 import { presetFilterOptions } from "../lib/presets";
@@ -220,74 +232,71 @@ export function DashboardPage() {
 
   return (
     <div>
-      <PageHeader title="Dashboard" subtitle="Active proforma invoices and tracked collections." />
-
-      <section className="mb-8" aria-labelledby="active-pis-heading">
-        <h2 id="active-pis-heading" className="mb-2 text-lg font-semibold text-ink">Active PIs</h2>
-        <ReportCopy>{activePiCopy()}</ReportCopy>
+      <PageHeader title="Dashboard" subtitle="Active proforma invoices and collections" />
+      <div className="mb-6">
         <PeriodChoices
           label="PI date"
           periods={piPeriodChoices()}
           value={filters.period}
           onChange={(value) => updateFilters({ period: value as PiPeriod })}
         />
-        {filters.period === "custom" ? (
-          <div className="mt-3 grid max-w-md grid-cols-2 gap-2">
-            <label className="text-sm">
-              <span className="mb-1 block font-medium text-slate-700">PI date from</span>
-              <input className={controlClass} type="date" value={filters.from} onChange={(event) => updateFilters({ from: event.target.value })} />
+      </div>
+      {filters.period === "custom" ? (
+        <div className="mb-4 grid max-w-md grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="PI date from">
+            <input className={controlClass} type="date" value={filters.from} onChange={(event) => updateFilters({ from: event.target.value })} />
+          </Field>
+          <Field label="PI date to">
+            <input className={controlClass} type="date" value={filters.to} onChange={(event) => updateFilters({ to: event.target.value })} />
+          </Field>
+        </div>
+      ) : null}
+      {dateMessage ? <p className="mb-4 text-sm text-danger" role="alert">{dateMessage}</p> : null}
+
+      <section className="mb-8" aria-labelledby="active-pis-heading">
+        {report ? <ActivePiSummary report={report} /> : (
+          <h2 id="active-pis-heading" className="mb-3 text-[18px] leading-6 font-semibold text-ink">Active PIs</h2>
+        )}
+        <div className="mb-3">
+          <Toolbar>
+            <SearchField label="Search PI or client" placeholder="Search PI or client" value={filters.search} onChange={(event) => updateFilters({ search: event.target.value })} />
+            <label className="w-40 shrink-0">
+              <span className="sr-only">Status</span>
+              <Select value={filters.status} onChange={(event) => updateFilters({ status: event.target.value })}>
+                <option value="">All active</option>
+                <option value="draft">Draft</option>
+                <option value="issued">Issued</option>
+                <option value="sent">Sent</option>
+                <option value="accepted">Accepted</option>
+              </Select>
             </label>
-            <label className="text-sm">
-              <span className="mb-1 block font-medium text-slate-700">PI date to</span>
-              <input className={controlClass} type="date" value={filters.to} onChange={(event) => updateFilters({ to: event.target.value })} />
-            </label>
-          </div>
-        ) : null}
-        {dateMessage ? <p className="mt-2 text-sm text-red-800" role="alert">{dateMessage}</p> : null}
-        <div className="mb-3 mt-3 flex flex-wrap items-end gap-2">
-          <label className="min-w-48 flex-1 text-sm">
-            <span className="mb-1 block font-medium text-slate-700">Search</span>
-            <input className={controlClass} placeholder="PI number or client" value={filters.search} onChange={(event) => updateFilters({ search: event.target.value })} />
-          </label>
-          <label className="w-40 text-sm">
-            <span className="mb-1 block font-medium text-slate-700">Status</span>
-            <Select value={filters.status} onChange={(event) => updateFilters({ status: event.target.value })}>
-              <option value="">All active</option>
-              <option value="draft">Draft</option>
-              <option value="issued">Issued</option>
-              <option value="sent">Sent</option>
-              <option value="accepted">Accepted</option>
-            </Select>
-          </label>
-          <Button type="button" variant="secondary" aria-expanded={filtersOpen} aria-controls={filtersId} onClick={() => setFiltersOpen((current) => !current)}>
-            {hiddenFilterCount > 0 ? `Filters (${hiddenFilterCount})` : "Filters"}
-          </Button>
+            <FiltersButton count={hiddenFilterCount} expanded={filtersOpen} controls={filtersId} onClick={() => setFiltersOpen((current) => !current)} />
+          </Toolbar>
         </div>
         {filtersOpen ? (
-          <div id={filtersId} className="mb-3 grid gap-3 rounded-[10px] border border-line bg-white p-4 sm:grid-cols-3">
-            <label className="text-sm">
-              <span className="mb-1 block font-medium text-slate-700">Office</span>
-              <Select value={filters.preset} onChange={(event) => updateFilters({ preset: event.target.value })}>
-                <option value="">All</option>
-                {presetOptions.map((preset) => <option key={preset.code} value={preset.code}>{preset.label}</option>)}
-              </Select>
-            </label>
-            <label className="text-sm">
-              <span className="mb-1 block font-medium text-slate-700">Currency</span>
-              <Select value={filters.currency} onChange={(event) => updateFilters({ currency: event.target.value })}>
-                <option value="">All</option>
-                <option>EGP</option>
-                <option>USD</option>
-                <option>EUR</option>
-              </Select>
-            </label>
-            <label className="text-sm">
-              <span className="mb-1 block font-medium text-slate-700">Lead salesperson</span>
-              <Select value={filters.lead} onChange={(event) => updateFilters({ lead: event.target.value })}>
-                <option value="">All</option>
-                {(report?.leads ?? []).map((lead) => <option key={lead.id} value={lead.id}>{leadLabel(lead.name, lead.active)}</option>)}
-              </Select>
-            </label>
+          <div className="mb-3">
+            <FilterPanel id={filtersId}>
+              <Field label="Office">
+                <Select value={filters.preset} onChange={(event) => updateFilters({ preset: event.target.value })}>
+                  <option value="">All</option>
+                  {presetOptions.map((preset) => <option key={preset.code} value={preset.code}>{preset.label}</option>)}
+                </Select>
+              </Field>
+              <Field label="Currency">
+                <Select value={filters.currency} onChange={(event) => updateFilters({ currency: event.target.value })}>
+                  <option value="">All</option>
+                  <option>EGP</option>
+                  <option>USD</option>
+                  <option>EUR</option>
+                </Select>
+              </Field>
+              <Field label="Lead salesperson">
+                <Select value={filters.lead} onChange={(event) => updateFilters({ lead: event.target.value })}>
+                  <option value="">All</option>
+                  {(report?.leads ?? []).map((lead) => <option key={lead.id} value={lead.id}>{leadLabel(lead.name, lead.active)}</option>)}
+                </Select>
+              </Field>
+            </FilterPanel>
           </div>
         ) : null}
         {chips.length > 0 ? (
@@ -299,83 +308,85 @@ export function DashboardPage() {
                 onRemove={() => updateFilters(chip.id === "status" ? { status: "" } : chip.id === "preset" ? { preset: "" } : chip.id === "currency" ? { currency: "" } : { lead: "" })}
               />
             ))}
-            <button type="button" className="text-sm text-navy-800 underline" onClick={() => updateFilters({ status: "", preset: "", currency: "", lead: "", search: "" })}>Clear filters</button>
+            <button type="button" className={quietActionClass} onClick={() => updateFilters({ status: "", preset: "", currency: "", lead: "", search: "" })}>Reset filters</button>
           </div>
         ) : null}
-        {reportError ? <p className="mb-3 text-sm text-red-800" role="alert">{report ? `The active PI figures could not be refreshed. ${reportError}` : reportError}</p> : null}
-        {reportLoading ? <p className="mb-2 text-sm text-slate-600" aria-live="polite">Loading active PIs…</p> : null}
-        {report ? <ActivePiSummary report={report} /> : null}
+        {reportError ? <p className="mb-3 text-sm text-danger" role="alert">{report ? `The active PI figures could not be refreshed. ${reportError}` : reportError}</p> : null}
+        {reportLoading ? <LoadingNote>Loading active PIs…</LoadingNote> : null}
         {!reportLoading && !report && !reportError ? <EmptyState title="No active proforma invoices" body="Active PIs will appear here. Cancelled PIs are not included." /> : null}
         {report && report.rows.length === 0 ? (
           <EmptyState title="No matching proforma invoices" body={filters.period === "all" ? "No active proforma invoices are visible." : "No active proforma invoices match this PI date and filters."} />
         ) : null}
         {report && report.rows.length > 0 ? <ActivePiTable rows={report.rows} onOpen={(id) => navigate(`/pis/${id}`)} /> : null}
-        {report ? <Pagination page={filters.page} pageCount={pageCount} onPage={(page) => updateFilters({ page })} /> : null}
+        {report ? <Pagination page={filters.page} pageCount={pageCount} total={report.count} onPage={(page) => updateFilters({ page })} /> : null}
       </section>
 
-      <section aria-labelledby="collections-heading">
-        <h2 id="collections-heading" className="mb-2 text-lg font-semibold text-ink">Collections</h2>
-        <ReportCopy>{collectionCopy()}</ReportCopy>
-        <div className="mb-3 flex flex-wrap items-end gap-3">
+      <section className="mb-8" aria-labelledby="collections-heading">
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <p className="mb-1 text-sm font-medium text-slate-700">Received on</p>
-            <PeriodChoices
-              label="Received on"
-              periods={receiptPeriodChoices()}
-              value={receiptPeriod}
-              onChange={(value) => setReceiptPeriod(value as ReceiptPeriod)}
-            />
+            <h2 id="collections-heading" className="text-[18px] leading-6 font-semibold text-ink">Collections</h2>
+            <p className="mt-1 text-sm text-secondary">All tracked balances · independent of PI date.</p>
           </div>
-          <label className="w-44 text-sm">
-            <span className="mb-1 block font-medium text-slate-700">Parent PI status</span>
-            <Select value={parentStatus} onChange={(event) => setParentStatus(event.target.value)}>
-              <option value="">All, including cancelled</option>
-              <option value="issued">Issued</option>
-              <option value="sent">Sent</option>
-              <option value="accepted">Accepted</option>
-              <option value="cancelled">Cancelled</option>
-            </Select>
-          </label>
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <p className="mb-1.5 text-[13px] font-medium text-secondary">Received</p>
+              <PeriodChoices
+                label="Received on"
+                periods={receiptPeriodChoices()}
+                value={receiptPeriod}
+                onChange={(value) => setReceiptPeriod(value as ReceiptPeriod)}
+              />
+            </div>
+            <label className="w-52">
+              <span className="mb-1.5 block text-[13px] font-medium text-secondary">PI status</span>
+              <Select value={parentStatus} onChange={(event) => setParentStatus(event.target.value)}>
+                <option value="">All, including cancelled</option>
+                <option value="issued">Issued</option>
+                <option value="sent">Sent</option>
+                <option value="accepted">Accepted</option>
+                <option value="cancelled">Cancelled</option>
+              </Select>
+            </label>
+          </div>
         </div>
         {receiptPeriod === "custom" ? (
-          <div className="mb-3 grid max-w-md grid-cols-2 gap-2">
-            <label className="text-sm">
-              <span className="mb-1 block font-medium text-slate-700">Received from</span>
+          <div className="mb-4 grid max-w-md grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Received from">
               <input className={controlClass} type="date" value={receiptFrom} onChange={(event) => setReceiptFrom(event.target.value)} />
-            </label>
-            <label className="text-sm">
-              <span className="mb-1 block font-medium text-slate-700">Received to</span>
+            </Field>
+            <Field label="Received to">
               <input className={controlClass} type="date" value={receiptTo} onChange={(event) => setReceiptTo(event.target.value)} />
-            </label>
+            </Field>
           </div>
         ) : null}
-        {receiptMessage ? <p className="mb-3 text-sm text-red-800" role="alert">{receiptMessage}</p> : null}
-        {summaryError ? <p className="mb-3 text-sm text-red-800" role="alert">{summary ? `The collection figures could not be refreshed. ${summaryError}` : summaryError}</p> : null}
-        {summaryLoading ? <p className="mb-2 text-sm text-slate-600" aria-live="polite">Loading collections…</p> : null}
+        {receiptMessage ? <p className="mb-3 text-sm text-danger" role="alert">{receiptMessage}</p> : null}
+        {summaryError ? <p className="mb-3 text-sm text-danger" role="alert">{summary ? `The collection figures could not be refreshed. ${summaryError}` : summaryError}</p> : null}
+        {summaryLoading ? <LoadingNote>Loading collections…</LoadingNote> : null}
         {summary ? <CollectionSummaryTable summary={summary} /> : null}
         {!summaryLoading && !summary && !summaryError ? (
           <EmptyState title="No tracked collections" body="Tracked outstanding balances appear here after payment tracking is started. An empty result does not mean every invoice is paid." />
         ) : null}
         {summary ? (
-          <div className="mt-3">
+          <div className="mt-4">
             <CoverageNote count={summary.untrackedCount} />
           </div>
         ) : null}
         {showUntracked ? (
           <div className="mt-4">
             <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-              <h3 className="text-sm font-semibold text-ink">Issued PIs with no payment plan</h3>
-              <button type="button" className="text-sm text-navy-800 underline" onClick={() => setParams({})}>Close</button>
+              <h3 className="text-[17px] font-semibold text-ink">Issued PIs with no payment plan</h3>
+              <button type="button" className={quietActionClass} onClick={() => setParams({})}>Close</button>
             </div>
-            <p className="mb-2 text-sm text-slate-600">The amounts below are quoted totals. They are not outstanding balances, and they are not included in the tracked figures above.</p>
-            {untrackedError ? <p className="mb-3 text-sm text-red-800" role="alert">{untracked ? `This list could not be refreshed. ${untrackedError}` : untrackedError}</p> : null}
-            {untrackedLoading ? <p className="mb-2 text-sm text-slate-600">Loading untracked PIs…</p> : null}
+            <p className="mb-2 text-sm text-secondary">The amounts below are quoted totals. They are not outstanding balances, and they are not included in the tracked figures above.</p>
+            {untrackedError ? <p className="mb-3 text-sm text-danger" role="alert">{untracked ? `This list could not be refreshed. ${untrackedError}` : untrackedError}</p> : null}
+            {untrackedLoading ? <LoadingNote>Loading untracked PIs…</LoadingNote> : null}
             {untracked && untracked.rows.length === 0 ? <EmptyState title="No untracked issued PIs" body="Every visible issued PI that is not cancelled has a payment plan, or none are visible to you." /> : null}
             {untracked && untracked.rows.length > 0 ? <ActivePiTable rows={untracked.rows} amountCaption="Quoted total" onOpen={(id) => navigate(`/pis/${id}`)} /> : null}
-            {untracked ? <Pagination page={untrackedPage} pageCount={untrackedPageCount} onPage={setUntrackedPage} /> : null}
+            {untracked ? <Pagination page={untrackedPage} pageCount={untrackedPageCount} total={untracked.count} onPage={setUntrackedPage} /> : null}
           </div>
         ) : null}
       </section>
+      <FiguresDisclosure />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Banner } from "../components/ui";
+import { usePageCrumbs } from "../components/page-chrome";
+import { Banner, formSheetClass } from "../components/ui";
 import { errorText } from "../lib/errors";
 import { formatDate, formatMoney, formatQuantity } from "../lib/format";
 import { methodLabel, nextCommittedPaymentDate, cairoToday } from "../lib/payment-tracking";
@@ -151,83 +152,87 @@ export function SubscriptionDetailPage() {
     };
   }, [id]);
 
-  if (loading) return <p className="text-sm text-slate-600">Loading subscription…</p>;
-  if (!subscription) return <p className="text-sm text-slate-700">This subscription was not found, or you do not have access to it.</p>;
+  usePageCrumbs([
+    { label: "Subscriptions", to: "/subscriptions" },
+    { label: subscription?.product_model || "Subscription" },
+  ]);
+
+  if (loading) return <p className="text-sm text-muted">Loading subscription…</p>;
+  if (!subscription) return <p className="text-sm text-secondary">This subscription was not found, or you do not have access to it.</p>;
 
   const nextPayment = nextCommittedPaymentDate(subscription.start_date, subscription.commitment_years, cairoToday());
   const periods = Array.isArray(subscription.annual_periods) ? subscription.annual_periods : [];
   const customerText = subscription.agreement?.subscription?.customer_text;
 
   return (
-    <div className="space-y-3">
+    <div className={`${formSheetClass} space-y-4`}>
       <div>
-        <Link to="/subscriptions" className="text-sm font-medium text-navy-800 underline">Back to subscriptions</Link>
-        <h1 className="mt-1 text-[26px] font-semibold leading-8 tracking-tight text-ink">{subscription.product_model}</h1>
-        <p className="mt-1 text-sm text-slate-700">{subscription.client_name}</p>
+        <h1 className="text-[26px] leading-[34px] font-semibold text-ink">{subscription.product_model}</h1>
+        <p className="mt-1 text-sm text-secondary">{subscription.client_name}</p>
       </div>
       {error ? <Banner tone="error">{error}</Banner> : null}
       {subscription.state === "payment_review_required" ? (
-        <Banner tone="info">
+        <Banner tone="warning">
           Payment review required. The first-year obligation is no longer fully paid
           {obligation ? ` (${formatMoney(obligation.outstanding_amount, subscription.currency)} outstanding)` : ""}.
           The subscription and its start date have not been removed.
         </Banner>
       ) : null}
-      <section className="rounded-[10px] border border-line bg-white p-6">
-        <h2 className="text-[15px] font-semibold text-ink">Saved agreement</h2>
+      <section className="rounded-lg border border-line bg-white p-6">
+        <h2 className="text-[17px] font-semibold text-ink">Saved agreement</h2>
         <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
-          <div><dt className="text-xs text-slate-500">Client</dt><dd>{subscription.client_link_matches_snapshot && subscription.client_id ? <Link className="underline" to={`/clients/${subscription.client_id}`}>{subscription.client_name}</Link> : subscription.client_name}</dd></div>
-          <div><dt className="text-xs text-slate-500">Product</dt><dd>{subscription.product_model}</dd></div>
-          <div><dt className="text-xs text-slate-500">Description</dt><dd>{subscription.product_description || "—"}</dd></div>
-          <div><dt className="text-xs text-slate-500">Quantity</dt><dd>{formatQuantity(subscription.quantity)}</dd></div>
-          <div><dt className="text-xs text-slate-500">Commitment</dt><dd>{subscription.commitment_years === 1 ? "1 year" : `${subscription.commitment_years} years`}</dd></div>
-          <div><dt className="text-xs text-slate-500">Year 1 unit price</dt><dd className="tabular-nums">{formatMoney(subscription.first_year_negotiated_unit_price, subscription.currency)}</dd></div>
-          <div className="sm:col-span-2 lg:col-span-3"><dt className="text-xs text-slate-500">Source PI</dt><dd><Link className="underline" to={`/pis/${subscription.pi_id}`}>{versionLabel}</Link></dd></div>
+          <div><dt className="text-xs text-muted">Client</dt><dd>{subscription.client_link_matches_snapshot && subscription.client_id ? <Link className="underline" to={`/clients/${subscription.client_id}`}>{subscription.client_name}</Link> : subscription.client_name}</dd></div>
+          <div><dt className="text-xs text-muted">Product</dt><dd>{subscription.product_model}</dd></div>
+          <div><dt className="text-xs text-muted">Description</dt><dd>{subscription.product_description || "—"}</dd></div>
+          <div><dt className="text-xs text-muted">Quantity</dt><dd>{formatQuantity(subscription.quantity)}</dd></div>
+          <div><dt className="text-xs text-muted">Commitment</dt><dd>{subscription.commitment_years === 1 ? "1 year" : `${subscription.commitment_years} years`}</dd></div>
+          <div><dt className="text-xs text-muted">Year 1 unit price</dt><dd className="tabular-nums">{formatMoney(subscription.first_year_negotiated_unit_price, subscription.currency)}</dd></div>
+          <div className="sm:col-span-2 lg:col-span-3"><dt className="text-xs text-muted">Source PI</dt><dd><Link className="underline" to={`/pis/${subscription.pi_id}`}>{versionLabel}</Link></dd></div>
         </dl>
-        {customerText ? <p className="mt-3 text-sm text-slate-700">{customerText}</p> : null}
-        <p className="mt-3 text-sm text-slate-700">{ruleText(subscription.later_year_rule, subscription.commitment_years)}</p>
-        {subscription.adjustment_compounds ? null : <p className="mt-1 text-xs text-slate-500">Later-year adjustments do not compound.</p>}
-        <p className="mt-3 text-sm text-slate-700">
+        {customerText ? <p className="mt-3 text-sm text-secondary">{customerText}</p> : null}
+        <p className="mt-3 text-sm text-secondary">{ruleText(subscription.later_year_rule, subscription.commitment_years)}</p>
+        {subscription.adjustment_compounds ? null : <p className="mt-1 text-xs text-muted">Later-year adjustments do not compound.</p>}
+        <p className="mt-3 text-sm text-secondary">
           {subscription.vendor_identity === "unavailable"
             ? "The issued agreement did not record a vendor, so no historical vendor is shown."
             : "Vendor saved on the issued agreement."}
         </p>
-        {currentVendor ? <p className="mt-1 text-xs text-slate-500">Current catalogue vendor: {currentVendor}. This is the vendor on the product record today, not a vendor saved from the issued PI.</p> : null}
-        {subscription.activation_kind === "no_charge" ? <p className="mt-3 text-sm text-slate-700">Activated at no charge. {subscription.no_charge_reason}</p> : null}
+        {currentVendor ? <p className="mt-1 text-xs text-muted">Current catalogue vendor: {currentVendor}. This is the vendor on the product record today, not a vendor saved from the issued PI.</p> : null}
+        {subscription.activation_kind === "no_charge" ? <p className="mt-3 text-sm text-secondary">Activated at no charge. {subscription.no_charge_reason}</p> : null}
       </section>
-      <section className="rounded-[10px] border border-line bg-white p-6">
-        <h2 className="text-[15px] font-semibold text-ink">First-year payment</h2>
+      <section className="rounded-lg border border-line bg-white p-6">
+        <h2 className="text-[17px] font-semibold text-ink">First-year payment</h2>
         {obligation ? (
-          <p className="mt-2 text-sm text-slate-700">
+          <p className="mt-2 text-sm text-secondary">
             {obligation.label}: agreed {formatMoney(obligation.amount, subscription.currency)}, received {formatMoney(obligation.paid_amount, subscription.currency)}, outstanding {formatMoney(obligation.outstanding_amount, subscription.currency)}.
           </p>
-        ) : <p className="mt-2 text-sm text-slate-600">The payment obligation is not available.</p>}
-        {receipts.length === 0 ? <p className="mt-2 text-sm text-slate-600">No receipts are allocated to this obligation.</p> : (
-          <ul className="mt-3 divide-y divide-slate-100 text-sm">
+        ) : <p className="mt-2 text-sm text-muted">The payment obligation is not available.</p>}
+        {receipts.length === 0 ? <p className="mt-2 text-sm text-muted">No receipts are allocated to this obligation.</p> : (
+          <ul className="mt-3 divide-y divide-line text-sm">
             {receipts.map((receipt) => (
               <li key={receipt.id} className="py-2">
-                <span className={receipt.reversed_at ? "text-slate-500 line-through" : ""}>
+                <span className={receipt.reversed_at ? "text-muted line-through" : ""}>
                   {formatDate(receipt.received_on)} · allocated {formatMoney(receipt.allocated, subscription.currency)} of {formatMoney(receipt.amount, subscription.currency)} · {methodLabel(receipt.method)}
                   {receipt.reference ? ` · ${receipt.reference}` : ""}
                 </span>
-                {receipt.reversed_at ? <span className="mt-1 block text-xs text-slate-600">Reversed. {receipt.reversal_reason}</span> : null}
+                {receipt.reversed_at ? <span className="mt-1 block text-xs text-muted">Reversed. {receipt.reversal_reason}</span> : null}
               </li>
             ))}
           </ul>
         )}
       </section>
-      <section className="rounded-[10px] border border-line bg-white p-6">
-        <h2 className="text-[15px] font-semibold text-ink">Annual timeline</h2>
-        <p className="mt-2 text-sm text-slate-700">
+      <section className="rounded-lg border border-line bg-white p-6">
+        <h2 className="text-[17px] font-semibold text-ink">Annual timeline</h2>
+        <p className="mt-2 text-sm text-secondary">
           Started {formatDate(subscription.start_date)}. The commitment ends {formatDate(subscription.commitment_end_date)}, which is not itself a payment date.
           {nextPayment ? ` Next committed annual payment: ${formatDate(nextPayment)}.` : " There is no further committed annual payment."}
         </p>
-        <p className="mt-1 text-xs text-slate-500">A late receipt does not move these dates. Passing a date does not mark a later year paid.</p>
+        <p className="mt-1 text-xs text-muted">A late receipt does not move these dates. Passing a date does not mark a later year paid.</p>
         <ul className="mt-3 space-y-2 text-sm">
           {periods.map((period) => (
             <li key={period.year} className="rounded-md border border-line px-3 py-2">
               <p className="font-medium text-ink">Year {period.year} · {formatDate(period.starts_on)} to {formatDate(period.ends_on)}</p>
-              <p className="mt-1 text-slate-700">
+              <p className="mt-1 text-secondary">
                 {period.year === 1
                   ? "Included in the source PI. The payment obligation above is the amount for this year."
                   : subscription.later_year_rule === "fixed_annual"
@@ -235,12 +240,12 @@ export function SubscriptionDetailPage() {
                     : "Price pending vendor confirmation. Not an amount due. The saved base is not a confirmed charge."}
               </p>
               {period.year > 1 && subscription.later_year_rule === "vendor_confirmed_base_adjustment" ? (
-                <p className="mt-1 text-xs text-slate-500">Saved base {formatMoney(subscription.later_year_base_unit_price, subscription.currency)} per unit, before the vendor confirms the adjustment. This base is not the amount due.</p>
+                <p className="mt-1 text-xs text-muted">Saved base {formatMoney(subscription.later_year_base_unit_price, subscription.currency)} per unit, before the vendor confirms the adjustment. This base is not the amount due.</p>
               ) : null}
             </li>
           ))}
         </ul>
-        <p className="mt-4 text-sm text-slate-700">
+        <p className="mt-4 text-sm text-secondary">
           Renewal invoicing and reminders are not implemented yet. A later phase is planned to remind staff one calendar month before the next committed year, confirm the vendor price, and issue a renewal PI for that year only. None of that happens automatically now.
         </p>
       </section>

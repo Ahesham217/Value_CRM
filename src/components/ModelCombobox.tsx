@@ -175,7 +175,7 @@ export function ModelCombobox({
   return (
     <div className="relative">
       {compact ? null : (
-        <span id={`${baseId}-label`} className="mb-1 block text-sm font-medium text-slate-700">
+        <span id={`${baseId}-label`} className="mb-1 block text-sm font-medium text-secondary">
           {label}
         </span>
       )}
@@ -223,7 +223,7 @@ export function ModelCombobox({
           }}
         >
           {exactArchived ? (
-            <div className="border-b border-slate-100 px-3 py-2 text-sm">
+            <div className="border-b border-line px-3 py-2 text-sm">
               <p>Model ‘{exactArchived.model_code}’ is archived and cannot be created again.</p>
               {canCreate ? (
                 <button
@@ -239,15 +239,15 @@ export function ModelCombobox({
                   {restoring ? "Restoring…" : "Restore product"}
                 </button>
               ) : (
-                <p className="mt-1 text-slate-600">Ask a colleague who manages products to restore it.</p>
+                <p className="mt-1 text-muted">Ask a colleague who manages products to restore it.</p>
               )}
             </div>
           ) : null}
-          {loading ? <p className="px-3 py-2 text-sm text-slate-500">Searching…</p> : null}
-          {searchError ? <p className="px-3 py-2 text-sm text-red-800">{searchError}</p> : null}
-          {!loading && !trimmed ? <p className="px-3 py-2 text-sm text-slate-500">Type a model name to search.</p> : null}
+          {loading ? <p className="px-3 py-2 text-sm text-muted">Searching…</p> : null}
+          {searchError ? <p className="px-3 py-2 text-sm text-danger">{searchError}</p> : null}
+          {!loading && !trimmed ? <p className="px-3 py-2 text-sm text-muted">Type a model name to search.</p> : null}
           {!loading && trimmed && options.length === 0 && !exactArchived && !searchError ? (
-            <p className="px-3 py-2 text-sm text-slate-500">No matching products.</p>
+            <p className="px-3 py-2 text-sm text-muted">No matching products.</p>
           ) : null}
           {options.map((option, index) => {
             const selected = index === activeIndex;
@@ -261,7 +261,7 @@ export function ModelCombobox({
                 type="button"
                 role="option"
                 aria-selected={selected}
-                className={`block w-full px-3 py-2 text-left text-sm ${selected ? "bg-navy-100" : "hover:bg-slate-50"}`}
+                className={`block w-full px-3 py-2 text-left text-sm ${selected ? "bg-navy-100" : "hover:bg-table"}`}
                 onMouseDown={(event) => {
                   pickedRef.current = true;
                   event.preventDefault();
@@ -272,13 +272,13 @@ export function ModelCombobox({
                 {option.kind === "product" ? (
                   <>
                     <span className="font-medium">{option.product.model_code}</span>
-                    <span className="text-slate-600"> · {option.product.vendor_name || "No vendor"}</span>
-                    {option.product.description ? <span className="block truncate text-slate-500">{option.product.description}</span> : null}
+                    <span className="text-muted"> · {option.product.vendor_name || "No vendor"}</span>
+                    {option.product.description ? <span className="block truncate text-muted">{option.product.description}</span> : null}
                   </>
                 ) : canCreate ? (
                   <span className="font-medium text-navy-800">{label}</span>
                 ) : (
-                  <span className="text-slate-700">
+                  <span className="text-secondary">
                     No saved product matches ‘{option.model}’. Ask a colleague who manages products to add it.
                   </span>
                 )}

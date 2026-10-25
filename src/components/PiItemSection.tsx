@@ -143,7 +143,7 @@ function SortableItem({
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       role="row"
-      className={`${rowGrid} min-h-14 border-b border-line px-3 py-2 ${isDragging ? "relative z-10 bg-white shadow-sm" : ""} ${warning ? "bg-amber-50" : ""}`}
+      className={`${rowGrid} min-h-14 border-b border-line px-3 py-2 ${isDragging ? "relative z-10 bg-white shadow-sm" : ""} ${warning ? "bg-warning-soft" : ""}`}
     >
       <div role="cell" className="pt-1">
         {canEdit ? (
@@ -178,8 +178,8 @@ function SortableItem({
         ) : (
           <input className={`${cellControlClass} font-medium`} readOnly aria-label={`Model for item ${itemNumber}`} value={line.modelInput} />
         )}
-        <p className="mt-0.5 truncate px-1.5 text-xs text-muted">
-          {line.product?.vendorName || (line.modelInput.trim() ? "No vendor" : "")}
+        <p className="mt-0.5 truncate px-1.5 text-[12px] text-muted">
+          {line.product?.vendorName ? `Vendor · ${line.product.vendorName}` : (line.modelInput.trim() ? "Vendor required" : "")}
         </p>
       </div>
       <div role="cell" className="min-w-0">
@@ -303,7 +303,7 @@ function SortableItem({
               </label>
             ) : null}
           </div>
-          <p className="mt-2 text-xs text-slate-600">
+          <p className="mt-2 text-xs text-muted">
             {line.subscription
               ? `${commitmentHeading(line.subscription.commitmentYears)}. Quantity is the number of units. The amount column is the Year 1 charge only.`
               : "Select a commitment for this currency. A missing currency price is not filled from another currency."}
@@ -313,8 +313,8 @@ function SortableItem({
               This commitment is priced in {line.subscription.currency}. This PI is {currency}. Prices are not converted. Choose a {currency} commitment. The saved terms were not replaced.
             </p>
           ) : null}
-          {negotiated ? <p className="mt-1 text-xs text-slate-700">{negotiated}</p> : null}
-          {drift ? <p className="mt-1 text-xs text-slate-700">{drift}</p> : null}
+          {negotiated ? <p className="mt-1 text-xs text-secondary">{negotiated}</p> : null}
+          {drift ? <p className="mt-1 text-xs text-secondary">{drift}</p> : null}
         </div>
       ) : line.subscription ? (
         <div className="col-span-full mt-2 text-xs text-amber-950">

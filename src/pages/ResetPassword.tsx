@@ -38,10 +38,10 @@ export function ResetPasswordPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-canvas px-4">
-      <form onSubmit={onSubmit} className="w-full max-w-md rounded-[10px] border border-line bg-white p-8">
+      <form onSubmit={onSubmit} className="w-full max-w-md rounded-lg border border-line bg-white p-8">
         <img src="/brand-logo.png" alt="Value Technologies" className="mb-6 h-10 w-auto" />
         <h1 className="text-[26px] font-semibold leading-8 tracking-tight text-ink">Choose a new password</h1>
-        <p className="mt-1 mb-4 text-sm text-slate-600">Use the link from your reset email. It opens this page with a recovery session.</p>
+        <p className="mt-1 mb-4 text-sm text-muted">Use the link from your reset email. It opens this page with a recovery session.</p>
         {error ? <div className="mb-3"><Banner tone="error">{error}</Banner></div> : null}
         {message ? <div className="mb-3"><Banner tone="success">{message}</Banner></div> : null}
         {!ready ? <Banner tone="info">Waiting for the recovery session from your email link.</Banner> : null}

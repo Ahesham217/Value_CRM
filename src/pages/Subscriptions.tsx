@@ -71,30 +71,30 @@ export function SubscriptionsPage() {
   return (
     <div>
       <PageHeader title="Subscriptions" />
-      <p className="mb-3 max-w-3xl text-sm text-slate-600">
+      <p className="mb-3 max-w-3xl text-sm text-muted">
         Active subscriptions start when the first-year obligation is fully paid. Renewal invoicing and reminders are not implemented yet.
       </p>
       <div className="mb-3 flex flex-wrap items-end gap-2">
         <label className="min-w-48 flex-1 text-sm">
-          <span className="mb-1 block font-medium text-slate-700">Search</span>
+          <span className="mb-1 block font-medium text-secondary">Search</span>
           <input className={controlClass} placeholder="Client or product" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} />
         </label>
         <label className="w-32 text-sm">
-          <span className="mb-1 block font-medium text-slate-700">Currency</span>
+          <span className="mb-1 block font-medium text-secondary">Currency</span>
           <Select value={currency} onChange={(event) => { setCurrency(event.target.value); setPage(1); }}>
             <option value="">All</option>
             {currencies.map((item) => <option key={item}>{item}</option>)}
           </Select>
         </label>
         <label className="w-40 text-sm">
-          <span className="mb-1 block font-medium text-slate-700">Commitment</span>
+          <span className="mb-1 block font-medium text-secondary">Commitment</span>
           <Select value={years} onChange={(event) => { setYears(event.target.value); setPage(1); }}>
             <option value="">All</option>
             {yearOptions.map((item) => <option key={item} value={item}>{item === 1 ? "1 year" : `${item} years`}</option>)}
           </Select>
         </label>
         <label className="w-44 text-sm">
-          <span className="mb-1 block font-medium text-slate-700">Payment review</span>
+          <span className="mb-1 block font-medium text-secondary">Payment review</span>
           <Select value={state} onChange={(event) => { setState(event.target.value); setPage(1); }}>
             <option value="">All</option>
             <option value="active">No review flag</option>
@@ -102,13 +102,13 @@ export function SubscriptionsPage() {
           </Select>
         </label>
       </div>
-      {error ? <p className="text-sm text-red-800" role="alert">{error}</p> : null}
-      {loading ? <p className="text-sm text-slate-600">Loading subscriptions…</p> : null}
+      {error ? <p className="text-sm text-danger" role="alert">{error}</p> : null}
+      {loading ? <p className="text-sm text-muted">Loading subscriptions…</p> : null}
       {!loading && rows.length === 0 ? <EmptyState title="No subscriptions" body="A subscription appears here after its first-year obligation is fully paid, or after an authorised no-charge activation." /> : null}
       {rows.length > 0 ? (
-        <div className="overflow-x-auto rounded-[10px] border border-line bg-white">
+        <div className="overflow-x-auto rounded-lg border border-line bg-white">
           <table className="min-w-full text-left text-sm">
-            <thead className="bg-slate-50">
+            <thead className="bg-table">
               <tr>
                 <th className={thClass} scope="col">Client</th>
                 <th className={thClass} scope="col">Product</th>
@@ -124,7 +124,7 @@ export function SubscriptionsPage() {
               {rows.map((row) => (
                 <tr
                   key={row.id}
-                  className="cursor-pointer border-t border-slate-100 hover:bg-canvas"
+                  className="cursor-pointer border-t border-line hover:bg-canvas"
                   onClick={(event) => {
                     if (event.target instanceof Element && event.target.closest("a, button")) return;
                     navigate(`/subscriptions/${row.id}`);
@@ -133,14 +133,18 @@ export function SubscriptionsPage() {
                   <td className={tdClass}>{row.client_name}</td>
                   <td className={tdClass}>
                     <Link className="font-medium text-navy-900 underline" to={`/subscriptions/${row.id}`}>{row.product_model}</Link>
-                    {row.product_description ? <span className="mt-0.5 block text-xs text-slate-500">{row.product_description}</span> : null}
+                    {row.product_description ? <span className="mt-0.5 block text-xs text-muted">{row.product_description}</span> : null}
                   </td>
                   <td className={tdClass}>{formatQuantity(row.quantity)}</td>
                   <td className={tdClass}>{row.commitment_years === 1 ? "1 year" : `${row.commitment_years} years`}</td>
                   <td className={tdClass}>{formatDate(row.start_date)}</td>
                   <td className={tdClass}>{row.next_payment_on ? formatDate(row.next_payment_on) : "—"}</td>
                   <td className={tdClass}>{formatDate(row.commitment_end_date)}</td>
-                  <td className={tdClass}>{row.state === "payment_review_required" ? "Payment review required" : "—"}</td>
+                  <td className={tdClass}>
+                    {row.state === "payment_review_required" ? (
+                      <span className="inline-flex rounded-md bg-warning-soft px-2 py-0.5 text-[12px] font-medium text-warning">Payment review required</span>
+                    ) : "—"}
+                  </td>
                 </tr>
               ))}
             </tbody>

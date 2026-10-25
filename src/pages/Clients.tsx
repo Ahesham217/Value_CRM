@@ -51,7 +51,7 @@ export function ClientsPage() {
       />
       <div className="mb-3 flex flex-wrap items-end gap-3">
         <label className="min-w-56 flex-1 text-sm">
-          <span className="mb-1 block font-medium text-slate-700">Search</span>
+          <span className="mb-1 block font-medium text-secondary">Search</span>
           <input className={controlClass} value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Company name" />
         </label>
         <label className="flex h-9 items-center gap-2 text-sm">
@@ -59,15 +59,15 @@ export function ClientsPage() {
           Show archived
         </label>
       </div>
-      {error ? <p className="text-sm text-red-800" role="alert">{error}</p> : null}
-      {loading ? <p className="text-sm text-slate-600">Loading clients…</p> : null}
+      {error ? <p className="text-sm text-danger" role="alert">{error}</p> : null}
+      {loading ? <p className="text-sm text-muted">Loading clients…</p> : null}
       {!loading && rows.length === 0 ? (
         <EmptyState title="No clients yet" body={manage ? "Use Add client to save a company before you prepare a PI." : "No clients are available."} />
       ) : null}
       {rows.length > 0 ? (
-        <div className="overflow-x-auto rounded-[10px] border border-line bg-white">
+        <div className="overflow-x-auto rounded-lg border border-line bg-white">
           <table className="min-w-full text-left text-sm">
-            <thead className="bg-slate-50">
+            <thead className="bg-table">
               <tr>
                 <th className={thClass} scope="col">Company</th>
                 <th className={thClass} scope="col">Country</th>
@@ -78,7 +78,7 @@ export function ClientsPage() {
               {rows.map((client) => (
                 <tr
                   key={client.id}
-                  className="cursor-pointer border-t border-slate-100 hover:bg-canvas"
+                  className="cursor-pointer border-t border-line hover:bg-canvas"
                   onClick={(event) => {
                     if (event.target instanceof Element && event.target.closest("a, button")) return;
                     navigate(`/clients/${client.id}`);

@@ -142,12 +142,12 @@ export function CreateCatalogueProduct({
   return (
     <Modal title="New catalogue product" onClose={onCancel}>
       <form onSubmit={(event) => void onSubmit(event)} className="space-y-3">
-        {error ? <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">{error}</p> : null}
+        {error ? <p className="rounded-md border border-line bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p> : null}
         <Field label="Model">
           <input className={controlClass} required value={model} onChange={(event) => setModel(event.target.value)} autoFocus />
         </Field>
         <div className="text-sm">
-          <span className="mb-1 block font-medium text-slate-700">Vendor</span>
+          <span className="mb-1 block font-medium text-secondary">Vendor</span>
           <input
             className={controlClass}
             value={vendorQuery}
@@ -155,14 +155,14 @@ export function CreateCatalogueProduct({
             onChange={(event) => setVendorQuery(event.target.value)}
             aria-label="Search vendors"
           />
-          <div className="mt-2 max-h-36 overflow-auto rounded-md border border-slate-200">
-            {loadingVendors ? <p className="px-3 py-2 text-slate-500">Loading vendors…</p> : null}
-            {!loadingVendors && filteredVendors.length === 0 ? <p className="px-3 py-2 text-slate-500">No active vendors match.</p> : null}
+          <div className="mt-2 max-h-36 overflow-auto rounded-md border border-line">
+            {loadingVendors ? <p className="px-3 py-2 text-muted">Loading vendors…</p> : null}
+            {!loadingVendors && filteredVendors.length === 0 ? <p className="px-3 py-2 text-muted">No active vendors match.</p> : null}
             {filteredVendors.map((vendor) => (
               <button
                 key={vendor.id}
                 type="button"
-                className={`block w-full px-3 py-2 text-left ${vendor.id === vendorId ? "bg-navy-100 font-medium" : "hover:bg-slate-50"}`}
+                className={`block w-full px-3 py-2 text-left ${vendor.id === vendorId ? "bg-navy-100 font-medium" : "hover:bg-table"}`}
                 onClick={() => {
                   setVendorId(vendor.id);
                   setVendorQuery("");
@@ -172,7 +172,7 @@ export function CreateCatalogueProduct({
               </button>
             ))}
           </div>
-          <p className="mt-2 text-slate-600">
+          <p className="mt-2 text-muted">
             {selectedVendor ? `Selected vendor: ${selectedVendor.company_name}. ` : "A vendor is required. "}
             <a className="text-navy-800 underline" href="/vendors/new" target="_blank" rel="noreferrer">Add a vendor</a>
             {" · "}

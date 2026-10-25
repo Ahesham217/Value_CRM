@@ -68,7 +68,7 @@ export function ProductsPage() {
       />
       <div className="mb-3 flex flex-wrap items-end gap-3">
         <label className="min-w-56 flex-1 text-sm">
-          <span className="mb-1 block font-medium text-slate-700">Search</span>
+          <span className="mb-1 block font-medium text-secondary">Search</span>
           <input className={controlClass} value={query} placeholder="Model or description" onChange={(event) => { setQuery(event.target.value); setPage(1); }} />
         </label>
         <label className="flex h-9 items-center gap-2 text-sm">
@@ -76,13 +76,13 @@ export function ProductsPage() {
           Show archived
         </label>
       </div>
-      {error ? <p className="text-sm text-red-800" role="alert">{error}</p> : null}
-      {loading ? <p className="text-sm text-slate-600">Loading products…</p> : null}
+      {error ? <p className="text-sm text-danger" role="alert">{error}</p> : null}
+      {loading ? <p className="text-sm text-muted">Loading products…</p> : null}
       {!loading && rows.length === 0 ? <EmptyState title="No products yet" body={manage ? "Use Add product, or create one while preparing a proforma invoice." : "No products are available."} /> : null}
       {rows.length > 0 ? (
-        <div className="overflow-x-auto rounded-[10px] border border-line bg-white">
+        <div className="overflow-x-auto rounded-lg border border-line bg-white">
           <table className="min-w-full text-left text-sm">
-            <thead className="bg-slate-50">
+            <thead className="bg-table">
               <tr>
                 <th className={thClass} scope="col">Model</th>
                 <th className={thClass} scope="col">Vendor</th>
@@ -98,7 +98,7 @@ export function ProductsPage() {
               {rows.map((product) => (
                 <tr
                   key={product.id}
-                  className="cursor-pointer border-t border-slate-100 hover:bg-canvas"
+                  className="cursor-pointer border-t border-line hover:bg-canvas"
                   onClick={(event) => {
                     if (event.target instanceof Element && event.target.closest("a, button")) return;
                     navigate(`/products/${product.id}`);
@@ -106,7 +106,7 @@ export function ProductsPage() {
                 >
                   <td className={tdClass}>
                     <Link className="font-medium text-navy-900 underline" to={`/products/${product.id}`}>{product.model_code}</Link>
-                    {product.brand ? <span className="mt-0.5 block text-xs text-slate-500">{product.brand}</span> : null}
+                    {product.brand ? <span className="mt-0.5 block text-xs text-muted">{product.brand}</span> : null}
                   </td>
                   <td className={tdClass}>{product.vendors?.company_name || "—"}</td>
                   <td className={tdClass}>{product.unit || "—"}</td>

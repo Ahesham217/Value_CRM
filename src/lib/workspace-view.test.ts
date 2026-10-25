@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   additionalSalesSummary,
+  draftSaveLabel,
   editorFingerprint,
   type EditorSnapshot,
   adjustmentRows,
@@ -226,5 +227,12 @@ describe("optional PI values stay visible", () => {
       { label: "Warranty", value: "12 months" },
       { label: "Notes", value: "" },
     ])).toBe("Price basis: Ex works · Warranty: 12 months");
+  });
+
+  it("shows draft saved only after a successful save, and unsaved changes after a later edit", () => {
+    expect(draftSaveLabel(false, false)).toBe("");
+    expect(draftSaveLabel(false, true)).toBe("Draft saved");
+    expect(draftSaveLabel(true, true)).toBe("Unsaved changes");
+    expect(draftSaveLabel(true, false)).toBe("Unsaved changes");
   });
 });

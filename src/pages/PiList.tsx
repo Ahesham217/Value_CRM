@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
-import { Button, EmptyState, FilterChip, Menu, PageHeader, Pagination, Select, StatusBadge, controlClass, tdClass, thClass } from "../components/ui";
+import { Button, EmptyState, Field, FilterChip, FilterPanel, FiltersButton, LoadingNote, Menu, PageHeader, Pagination, SearchField, Select, StatusBadge, Toolbar, clickableRowClass, controlClass, linkClass, quietActionClass, tableWrapClass, tdClass, thClass, theadClass } from "../components/ui";
 import { errorText } from "../lib/errors";
 import { displayNumber, formatDate, formatMoney } from "../lib/format";
 import { can } from "../lib/permissions";
@@ -127,84 +127,78 @@ export function PiListPage() {
         title="Proforma invoices"
         actions={canEdit ? <Button variant="primary" type="button" onClick={() => void createDraft()} disabled={creating}>{creating ? "Creating…" : "New PI"}</Button> : null}
       />
-      <div className="mb-3 flex flex-wrap items-end gap-2">
-        <label className="min-w-48 flex-1 text-sm">
-          <span className="mb-1 block font-medium text-slate-700">Search</span>
-          <input className={controlClass} placeholder="PI number or client" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} />
-        </label>
-        <label className="w-36 text-sm">
-          <span className="mb-1 block font-medium text-slate-700">Status</span>
-          <Select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}>
-            <option value="">All</option>
-            <option value="draft">Draft</option>
-            <option value="issued">Issued</option>
-            <option value="sent">Sent</option>
-            <option value="accepted">Accepted</option>
-            <option value="cancelled">Cancelled</option>
-          </Select>
-        </label>
-        <Button type="button" variant="secondary" aria-expanded={filtersOpen} aria-controls={filtersId} onClick={() => setFiltersOpen((current) => !current)}>
-          {hiddenFilterCount > 0 ? `Filters (${hiddenFilterCount})` : "Filters"}
-        </Button>
+      <div className="mb-3">
+        <Toolbar>
+          <SearchField label="Search PI or client" placeholder="Search PI or client" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} />
+          <label className="w-40 shrink-0">
+            <span className="sr-only">Status</span>
+            <Select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}>
+              <option value="">All statuses</option>
+              <option value="draft">Draft</option>
+              <option value="issued">Issued</option>
+              <option value="sent">Sent</option>
+              <option value="accepted">Accepted</option>
+              <option value="cancelled">Cancelled</option>
+            </Select>
+          </label>
+          <FiltersButton count={hiddenFilterCount} expanded={filtersOpen} controls={filtersId} onClick={() => setFiltersOpen((current) => !current)} />
+        </Toolbar>
       </div>
       {filtersOpen ? (
-        <div id={filtersId} className="mb-3 grid gap-3 rounded-[10px] border border-line bg-white p-4 sm:grid-cols-2 lg:grid-cols-4">
-          <label className="text-sm">
-            <span className="mb-1 block font-medium text-slate-700">Office</span>
-            <Select value={office} onChange={(event) => { setOffice(event.target.value); setPage(1); }}>
-              <option value="">All</option>
-              {presetOptions.map((preset) => <option key={preset.code} value={preset.code}>{preset.label}</option>)}
-            </Select>
-          </label>
-          <label className="text-sm">
-            <span className="mb-1 block font-medium text-slate-700">Currency</span>
-            <Select value={currency} onChange={(event) => { setCurrency(event.target.value); setPage(1); }}>
-              <option value="">All</option>
-              <option>EGP</option>
-              <option>USD</option>
-              <option>EUR</option>
-            </Select>
-          </label>
-          <label className="text-sm">
-            <span className="mb-1 block font-medium text-slate-700">Salesperson</span>
-            <Select value={salesperson} onChange={(event) => { setSalesperson(event.target.value); setPage(1); }}>
-              <option value="">All</option>
-              {people.map((person) => <option key={person.id} value={person.id}>{person.full_name}</option>)}
-            </Select>
-          </label>
-          <div className="grid grid-cols-2 gap-2">
-            <label className="text-sm">
-              <span className="mb-1 block font-medium text-slate-700">From</span>
-              <input className={controlClass} type="date" value={fromDate} onChange={(event) => { setFromDate(event.target.value); setPage(1); }} />
-            </label>
-            <label className="text-sm">
-              <span className="mb-1 block font-medium text-slate-700">To</span>
-              <input className={controlClass} type="date" value={toDate} onChange={(event) => { setToDate(event.target.value); setPage(1); }} />
-            </label>
-          </div>
+        <div className="mb-3">
+          <FilterPanel id={filtersId} className="lg:grid-cols-4">
+            <Field label="Office">
+              <Select value={office} onChange={(event) => { setOffice(event.target.value); setPage(1); }}>
+                <option value="">All</option>
+                {presetOptions.map((preset) => <option key={preset.code} value={preset.code}>{preset.label}</option>)}
+              </Select>
+            </Field>
+            <Field label="Currency">
+              <Select value={currency} onChange={(event) => { setCurrency(event.target.value); setPage(1); }}>
+                <option value="">All</option>
+                <option>EGP</option>
+                <option>USD</option>
+                <option>EUR</option>
+              </Select>
+            </Field>
+            <Field label="Salesperson">
+              <Select value={salesperson} onChange={(event) => { setSalesperson(event.target.value); setPage(1); }}>
+                <option value="">All</option>
+                {people.map((person) => <option key={person.id} value={person.id}>{person.full_name}</option>)}
+              </Select>
+            </Field>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="From">
+                <input className={controlClass} type="date" value={fromDate} onChange={(event) => { setFromDate(event.target.value); setPage(1); }} />
+              </Field>
+              <Field label="To">
+                <input className={controlClass} type="date" value={toDate} onChange={(event) => { setToDate(event.target.value); setPage(1); }} />
+              </Field>
+            </div>
+          </FilterPanel>
         </div>
       ) : null}
       {chips.length > 0 ? (
         <div className="mb-3 flex flex-wrap items-center gap-2">
           {chips.map((chip) => <FilterChip key={chip.id} label={chip.label} onRemove={() => removeChip(chip.id)} />)}
-          <button type="button" className="text-sm text-navy-800 underline" onClick={clearFilters}>Clear filters</button>
+          <button type="button" className={quietActionClass} onClick={clearFilters}>Reset filters</button>
         </div>
       ) : null}
-      {error ? <p className="mb-3 text-sm text-red-800" role="alert">{error}</p> : null}
-      {loading ? <p className="mb-2 text-sm text-slate-600" aria-live="polite">Loading PIs…</p> : null}
+      {error ? <p className="mb-3 text-sm text-danger" role="alert">{error}</p> : null}
+      {loading ? <LoadingNote>Loading PIs…</LoadingNote> : null}
       {!loading && rows.length === 0 ? (
         <EmptyState title="No proforma invoices" body={canEdit ? "Use New PI to start a draft, or change the filters." : "No proforma invoices match."} />
       ) : null}
       {rows.length > 0 ? (
-        <div className="overflow-x-auto rounded-[10px] border border-line bg-white">
+        <div className={tableWrapClass}>
           <table className="min-w-full text-left text-sm">
-            <thead className="bg-slate-50">
+            <thead className={theadClass}>
               <tr>
-                <th className={thClass} scope="col">PI number</th>
+                <th className={thClass} scope="col">PI</th>
                 <th className={thClass} scope="col">Client</th>
-                <th className={thClass} scope="col">Date</th>
-                <th className={`${thClass} text-right`} scope="col">Total</th>
-                <th className={thClass} scope="col">Lead salesperson</th>
+                <th className={thClass} scope="col">PI date</th>
+                <th className={`${thClass} text-right`} scope="col">Amount</th>
+                <th className={thClass} scope="col">Lead</th>
                 <th className={thClass} scope="col">Status</th>
                 <th className={thClass} scope="col"><span className="sr-only">Actions</span></th>
               </tr>
@@ -213,19 +207,19 @@ export function PiListPage() {
               {rows.map((row) => (
                 <tr
                   key={row.id}
-                  className="cursor-pointer border-t border-slate-100 hover:bg-canvas"
+                  className={clickableRowClass}
                   onClick={(event) => {
                     if (event.target instanceof Element && event.target.closest("a, button")) return;
                     navigate(`/pis/${row.id}`);
                   }}
                 >
                   <td className={tdClass}>
-                    <Link className="font-medium text-navy-900 underline" to={`/pis/${row.id}`}>{displayNumber(row.pi_number, row.latest_revision)}</Link>
-                    {row.has_open_revision ? <span className="mt-0.5 block text-xs text-slate-500">Revision draft open</span> : null}
+                    <Link className={linkClass} to={`/pis/${row.id}`}>{displayNumber(row.pi_number, row.latest_revision)}</Link>
+                    {row.has_open_revision ? <span className="mt-0.5 block text-[12px] text-muted">Revision draft open</span> : null}
                   </td>
                   <td className={tdClass}>{row.client_name || "—"}</td>
                   <td className={`${tdClass} whitespace-nowrap`}>{formatDate(row.pi_date)}</td>
-                  <td className={`${tdClass} whitespace-nowrap text-right tabular-nums`}>{formatMoney(row.display_total, row.currency)}</td>
+                  <td className={`${tdClass} text-right font-medium whitespace-nowrap tabular-nums`}>{formatMoney(row.display_total, row.currency)}</td>
                   <td className={tdClass}>{row.lead_name || "—"}</td>
                   <td className={tdClass}><StatusBadge status={row.display_status} /></td>
                   <td className={tdClass} onClick={(event) => event.stopPropagation()}>
@@ -239,7 +233,7 @@ export function PiListPage() {
           </table>
         </div>
       ) : null}
-      <Pagination page={page} pageCount={Math.ceil(count / PAGE_SIZE)} onPage={setPage} />
+      <Pagination page={page} pageCount={Math.ceil(count / PAGE_SIZE)} total={count} onPage={setPage} />
     </div>
   );
 }
