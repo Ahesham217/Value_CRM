@@ -16,7 +16,7 @@ import {
 import { supabase } from "../lib/supabase";
 import type { PiVersion } from "../lib/types";
 import { PAYMENT_TRACKING_ANCHOR } from "../lib/reporting";
-import { Banner, Button, Field, Select, TextArea } from "./ui";
+import { Banner, Button, Field, LoadingNote, Select, TextArea, controlClass, tableWrapClass, tdClass, thClass, theadClass } from "./ui";
 
 type PlanRow = {
   id: string;
@@ -343,28 +343,28 @@ export function PaymentTrackingSection({
     await load().catch((caught) => setError(errorText(caught)));
   }
 
-  if (loading) return <section id={PAYMENT_TRACKING_ANCHOR} className="rounded-[10px] border border-line bg-white p-6 text-sm text-slate-600">Loading payment tracking…</section>;
+  if (loading) return <section id={PAYMENT_TRACKING_ANCHOR} className="rounded-lg border border-line bg-white p-6"><LoadingNote>Loading payment tracking…</LoadingNote></section>;
   if (versions.length === 0) {
     return (
-      <section id={PAYMENT_TRACKING_ANCHOR} className="rounded-[10px] border border-line bg-white p-6">
+      <section id={PAYMENT_TRACKING_ANCHOR} className="rounded-lg border border-line bg-white p-6">
         <h2 className="text-[15px] font-semibold text-ink">Payment tracking</h2>
-        <p className="mt-2 text-sm text-slate-600">Generate a PI before starting payment tracking. A draft is not a collection plan, and downloading a PI does not start one.</p>
+        <p className="mt-2 text-sm text-muted">Generate a PI before starting payment tracking. A draft is not a collection plan, and downloading a PI does not start one.</p>
       </section>
     );
   }
 
   return (
-    <section id={PAYMENT_TRACKING_ANCHOR} className="rounded-[10px] border border-line bg-white p-6">
+    <section id={PAYMENT_TRACKING_ANCHOR} className="rounded-lg border border-line bg-white p-6">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-[15px] font-semibold text-ink">Payment tracking</h2>
-        {plan ? <p className="text-sm text-slate-600">Collection status is separate from the PI status.</p> : null}
+        {plan ? <p className="text-sm text-muted">Collection status is separate from the PI status.</p> : null}
       </div>
       {error ? <div className="mt-3"><Banner tone="error">{error}</Banner></div> : null}
       {message ? <div className="mt-3"><Banner tone="success">{message}</Banner></div> : null}
 
       {!plan ? (
         <div className="mt-4 space-y-3">
-          <p className="text-sm text-slate-700">Choose the issued version the customer agreed. Starting tracking does not mark the PI accepted, and a later revision will not move this plan.</p>
+          <p className="text-sm text-secondary">Choose the issued version the customer agreed. Starting tracking does not mark the PI accepted, and a later revision will not move this plan.</p>
           <Field label="Issued version">
             <Select value={versionId} onChange={(event) => { setVersionId(event.target.value); setConfirmed(false); }}>
               {versions.map((version) => (
@@ -393,35 +393,35 @@ export function PaymentTrackingSection({
               </Button>
             </div>
           ) : (
-            <p className="text-sm text-slate-600">You can view this PI. Recording payments needs permission to manage payment tracking.</p>
+            <p className="text-sm text-muted">You can view this PI. Recording payments needs permission to manage payment tracking.</p>
           )}
         </div>
       ) : (
         <div className="mt-4 space-y-4">
           {tracked && latest && tracked.id !== latest.id ? (
-            <Banner tone="info">
+            <Banner tone="warning">
               Payment tracking follows {tracked.snapshot.display_number} ({formatMoney(plan.agreed_total, currency)}). The latest issued version is {latest.snapshot.display_number}. Tracking stays on the agreed version, and receipts are not moved.
             </Banner>
           ) : null}
           <dl className="grid gap-3 text-sm sm:grid-cols-3">
-            <div><dt className="text-xs text-slate-500">Agreed total</dt><dd className="tabular-nums">{formatMoney(plan.agreed_total, currency)}</dd></div>
-            <div><dt className="text-xs text-slate-500">Received</dt><dd className="tabular-nums">{formatMoney(received, currency)}</dd></div>
-            <div><dt className="text-xs text-slate-500">Outstanding</dt><dd className="tabular-nums">{formatMoney(outstanding, currency)}</dd></div>
+            <div><dt className="text-xs text-muted">Agreed total</dt><dd className="tabular-nums">{formatMoney(plan.agreed_total, currency)}</dd></div>
+            <div><dt className="text-xs text-muted">Received</dt><dd className="tabular-nums">{formatMoney(received, currency)}</dd></div>
+            <div><dt className="text-xs text-muted">Outstanding</dt><dd className="tabular-nums">{formatMoney(outstanding, currency)}</dd></div>
           </dl>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-muted">
             {plan.schema_version === 2
               ? "Schema version 2. Subscription advances are separate from one-time payments. A percentage on a one-time row is not a percentage of the whole PI."
               : "Schema version 1. These obligations are the whole PI. They are not split into a subscription advance."}
           </p>
-          <div className="overflow-x-auto">
+          <div className={tableWrapClass}>
             <table className="min-w-full text-left text-sm">
-              <thead className="text-xs text-slate-500">
+              <thead className={theadClass}>
                 <tr>
-                  <th className="py-1 pr-3 font-medium">Obligation</th>
-                  <th className="py-1 pr-3 text-right font-medium">Agreed</th>
-                  <th className="py-1 pr-3 text-right font-medium">Outstanding</th>
-                  <th className="py-1 pr-3 font-medium">Payment</th>
-                  <th className="py-1 font-medium">Due</th>
+                  <th className={thClass} scope="col">Obligation</th>
+                  <th className={`${thClass} text-right`} scope="col">Agreed</th>
+                  <th className={`${thClass} text-right`} scope="col">Outstanding</th>
+                  <th className={thClass} scope="col">Payment</th>
+                  <th className={thClass} scope="col">Due</th>
                 </tr>
               </thead>
               <tbody>
@@ -435,17 +435,17 @@ export function PaymentTrackingSection({
                   });
                   const linked = subscriptions.find((item) => item.source_obligation_id === obligation.subscription_obligation_id);
                   return (
-                    <tr key={obligation.id} className="border-t border-slate-100">
-                      <td className="py-2 pr-3">
+                    <tr key={obligation.id} className="border-t border-line">
+                      <td className={tdClass}>
                         {obligation.label}
-                        {linked ? <Link className="mt-1 block text-xs text-primary underline" to={`/subscriptions/${linked.id}`}>{linked.state === "payment_review_required" ? "Payment review required" : "Subscription"}</Link> : null}
+                        {linked ? <Link className="mt-1 block text-[13px] text-primary underline" to={`/subscriptions/${linked.id}`}>{linked.state === "payment_review_required" ? "Payment review required" : "Subscription"}</Link> : null}
                       </td>
-                      <td className="py-2 pr-3 text-right tabular-nums">{formatMoney(obligation.amount, currency)}</td>
-                      <td className="py-2 pr-3 text-right tabular-nums">{formatMoney(obligation.outstanding_amount, currency)}</td>
-                      <td className="py-2 pr-3">{collectionLabel(obligation.collection_status)}</td>
-                      <td className="py-2">
+                      <td className={`${tdClass} text-right tabular-nums`}>{formatMoney(obligation.amount, currency)}</td>
+                      <td className={`${tdClass} text-right font-medium tabular-nums`}>{formatMoney(obligation.outstanding_amount, currency)}</td>
+                      <td className={tdClass}>{collectionLabel(obligation.collection_status)}</td>
+                      <td className={tdClass}>
                         {obligation.due_date ? formatDate(obligation.due_date) : due.schedule}
-                        {due.timing ? <span className="ml-2 text-xs text-slate-500">{due.timing}</span> : null}
+                        {due.timing ? <span className="mt-0.5 block text-[12px] text-muted">{due.timing}</span> : null}
                       </td>
                     </tr>
                   );
@@ -460,7 +460,7 @@ export function PaymentTrackingSection({
               {waiveId === item.id ? (
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
                   <Field label="Start date">
-                    <input className="h-10 w-full rounded-md border border-line px-3 text-sm" type="date" value={waiveDate} onChange={(event) => setWaiveDate(event.target.value)} />
+                    <input className={controlClass} type="date" value={waiveDate} onChange={(event) => setWaiveDate(event.target.value)} />
                   </Field>
                   <Field label="Reason">
                     <TextArea rows={2} value={waiveReason} onChange={(event) => setWaiveReason(event.target.value)} />
@@ -480,10 +480,10 @@ export function PaymentTrackingSection({
                   <h3 className="text-sm font-medium text-ink">Record payment</h3>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
                     <Field label="Amount received" hint={currency ? `Recorded in ${currency}. There is no currency conversion.` : undefined}>
-                      <input className="h-10 w-full rounded-md border border-line px-3 text-sm tabular-nums" inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} />
+                      <input className={`${controlClass} tabular-nums`} inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} />
                     </Field>
                     <Field label="Date received">
-                      <input className="h-10 w-full rounded-md border border-line px-3 text-sm" type="date" value={receivedOn} onChange={(event) => setReceivedOn(event.target.value)} />
+                      <input className={controlClass} type="date" value={receivedOn} onChange={(event) => setReceivedOn(event.target.value)} />
                     </Field>
                     <Field label="Method">
                       <Select value={method} onChange={(event) => setMethod(event.target.value)}>
@@ -494,19 +494,19 @@ export function PaymentTrackingSection({
                       </Select>
                     </Field>
                     <Field label="Reference" hint="Optional. The same reference can be used more than once.">
-                      <input className="h-10 w-full rounded-md border border-line px-3 text-sm" value={reference} onChange={(event) => setReference(event.target.value)} />
+                      <input className={controlClass} value={reference} onChange={(event) => setReference(event.target.value)} />
                     </Field>
                     <Field className="sm:col-span-2" label="Internal note" hint="Optional.">
                       <TextArea rows={2} value={note} onChange={(event) => setNote(event.target.value)} />
                     </Field>
                   </div>
-                  <p className="mt-3 text-sm text-slate-700">Suggested allocation, in document order. Change any amount before recording. Nothing is allocated until you record the payment.</p>
+                  <p className="mt-3 text-sm text-secondary">Suggested allocation, in document order. Change any amount before recording. Nothing is allocated until you record the payment.</p>
                   <div className="mt-2 space-y-2">
                     {openObligations.map((obligation) => (
                       <label key={obligation.id} className="grid gap-1 text-sm sm:grid-cols-[minmax(0,1fr)_9rem] sm:items-center">
                         <span>{obligation.label} · unpaid {formatMoney(obligation.outstanding_amount, currency)}</span>
                         <input
-                          className="h-10 rounded-md border border-line px-3 text-sm tabular-nums"
+                          className={`${controlClass} tabular-nums`}
                           inputMode="decimal"
                           aria-label={`Allocation to ${obligation.label}`}
                           value={allocationAmounts[obligation.id] ?? ""}
@@ -515,7 +515,7 @@ export function PaymentTrackingSection({
                       </label>
                     ))}
                   </div>
-                  <p className="mt-2 text-xs text-slate-500">Allocated {currency ? formatMoney(allocationSum(Object.values(allocationAmounts).filter(Boolean).map((value) => ({ amount: value }))), currency) : allocationSum(Object.values(allocationAmounts).filter(Boolean).map((value) => ({ amount: value })))}.</p>
+                  <p className="mt-2 text-xs text-muted">Allocated {currency ? formatMoney(allocationSum(Object.values(allocationAmounts).filter(Boolean).map((value) => ({ amount: value }))), currency) : allocationSum(Object.values(allocationAmounts).filter(Boolean).map((value) => ({ amount: value })))}.</p>
                   {activationPreview.map((item) => (
                     <p key={item.label} className="mt-2 text-sm text-ink">Recording this payment activates {item.label} on {formatDate(item.start)}. That date is the received date on which the Year 1 obligation is fully paid.</p>
                   ))}
@@ -538,28 +538,28 @@ export function PaymentTrackingSection({
 
           <div>
             <h3 className="text-sm font-medium text-ink">Payment history</h3>
-            {receipts.length === 0 ? <p className="mt-1 text-sm text-slate-600">No payments recorded.</p> : (
-              <ul className="mt-2 divide-y divide-slate-100">
+            {receipts.length === 0 ? <p className="mt-1 text-sm text-muted">No payments recorded.</p> : (
+              <ul className="mt-2 divide-y divide-line">
                 {receipts.map((receipt) => {
                   const receiptAllocations = allocations.filter((item) => item.receipt_id === receipt.id);
                   return (
                     <li key={receipt.id} className="py-2 text-sm">
                       <div className="flex flex-wrap items-baseline justify-between gap-2">
-                        <p className={receipt.reversed_at ? "text-slate-500 line-through" : "text-ink"}>
+                        <p className={receipt.reversed_at ? "text-muted line-through" : "text-ink"}>
                           {formatDate(receipt.received_on)} · {formatMoney(receipt.amount, receipt.currency)} · {methodLabel(receipt.method)}
                           {receipt.reference ? ` · ${receipt.reference}` : ""}
                         </p>
-                        <p className="text-xs text-slate-500">Recorded by {names[receipt.recorded_by] || "staff"}</p>
+                        <p className="text-xs text-muted">Recorded by {names[receipt.recorded_by] || "staff"}</p>
                       </div>
-                      <p className="text-xs text-slate-600">
+                      <p className="text-xs text-muted">
                         {receiptAllocations.map((item) => {
                           const obligation = obligations.find((candidate) => candidate.id === item.obligation_id);
                           return `${obligation?.label ?? "Obligation"} ${formatMoney(item.amount, receipt.currency)}`;
                         }).join(" · ")}
                       </p>
-                      {receipt.note ? <p className="text-xs text-slate-600">{receipt.note}</p> : null}
+                      {receipt.note ? <p className="text-xs text-muted">{receipt.note}</p> : null}
                       {receipt.reversed_at ? (
-                        <p className="text-xs text-slate-600">Reversed {formatDate(receipt.reversed_at)} by {names[receipt.reversed_by ?? ""] || "staff"}. {receipt.reversal_reason}</p>
+                        <p className="text-xs text-muted">Reversed {formatDate(receipt.reversed_at)} by {names[receipt.reversed_by ?? ""] || "staff"}. {receipt.reversal_reason}</p>
                       ) : canReverse ? (
                         reverseId === receipt.id ? (
                           <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
@@ -567,7 +567,7 @@ export function PaymentTrackingSection({
                             <Button type="button" variant="danger" onClick={() => void reversePayment()}>Reverse payment</Button>
                           </div>
                         ) : (
-                          <button type="button" className="mt-1 text-xs text-red-800 underline" onClick={() => { setReverseId(receipt.id); setReverseReason(""); }}>Reverse payment</button>
+                          <button type="button" className="mt-1 text-xs text-danger underline" onClick={() => { setReverseId(receipt.id); setReverseReason(""); }}>Reverse payment</button>
                         )
                       ) : null}
                     </li>

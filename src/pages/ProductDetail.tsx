@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
 import { CommitmentOptions } from "../components/CommitmentOptions";
+import { usePageCrumbs } from "../components/page-chrome";
 import { ProductPiHistory } from "../components/ProductPiHistory";
 import { Banner, Button, Disclosure, Field, Menu, PageHeader, Select, TextArea, buttonClass, controlClass } from "../components/ui";
 import { errorText } from "../lib/errors";
@@ -148,7 +149,12 @@ export function ProductDetailPage() {
     }
   }
 
-  if (loading) return <p className="text-sm text-slate-600">Loading product…</p>;
+  usePageCrumbs([
+    { label: "Products", to: "/products" },
+    { label: isNew ? "New product" : modelCode || "Product" },
+  ]);
+
+  if (loading) return <p className="text-sm text-muted">Loading product…</p>;
 
   const extraSummary = recordOptionalSummary([
     { label: "Brand", value: brand },
@@ -156,7 +162,7 @@ export function ProductDetailPage() {
   ]);
 
   return (
-    <div className="space-y-3">
+    <div className="w-full max-w-[1120px] space-y-3">
       <form onSubmit={onSubmit} className="space-y-3">
         <PageHeader
           title={isNew ? "New product" : modelCode || "Product"}
@@ -186,7 +192,7 @@ export function ProductDetailPage() {
         {error ? <Banner tone="error">{error}</Banner> : null}
         {message ? <Banner tone="success">{message}</Banner> : null}
         {!manage ? <Banner tone="info">You can view this product. An administrator has not given you permission to change products.</Banner> : null}
-        <section className="rounded-[10px] border border-line bg-white p-6">
+        <section className="rounded-lg border border-line bg-white p-6">
           <h2 className="text-[15px] font-semibold text-ink">Product details</h2>
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
             <Field label="Model" hint="Unique across the catalogue. Capitalisation and surrounding spaces do not make a different model.">
@@ -219,7 +225,7 @@ export function ProductDetailPage() {
               <PriceInput code="USD" value={usd} disabled={!manage} onChange={setUsd} />
               <PriceInput code="EUR" value={eur} disabled={!manage} onChange={setEur} />
             </div>
-            <p className="mt-1 text-xs text-slate-500">A blank price is unknown, not zero. Prices are not converted between currencies.</p>
+            <p className="mt-1 text-xs text-muted">A blank price is unknown, not zero. Prices are not converted between currencies.</p>
           </div>
           <div className="mt-4">
             <Disclosure title="Additional product details" summary={extraSummary} open={brandOpen} onToggle={() => setBrandOpen((current) => !current)} quiet>
@@ -229,7 +235,7 @@ export function ProductDetailPage() {
               {seeCost ? (
                 <div className="mt-3">
                   <h3 className="text-sm font-semibold text-ink">Purchase price</h3>
-                  <p className="mt-1 text-xs text-slate-500">Only people with purchase-price permission can see this. It never appears on a customer PDF or in PI history.</p>
+                  <p className="mt-1 text-xs text-muted">Only people with purchase-price permission can see this. It never appears on a customer PDF or in PI history.</p>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
                     <Field label="Purchase price"><input className={controlClass} inputMode="decimal" disabled={!manage} value={purchasePrice} onChange={(event) => setPurchasePrice(event.target.value)} /></Field>
                     <Field label="Currency">

@@ -130,6 +130,8 @@ describe("dashboard and payments views", () => {
     expect(markup).toContain("USD 200.00");
     expect(markup).not.toContain("EGP 1,200.00");
     expect(markup).toContain("Revision draft open");
+    expect(markup).toContain('href="/pis/issued-1"');
+    expect(markup).toContain('href="/pis/draft-1"');
     expect(markup).toContain(">Draft<");
     expect(markup).toContain("Archive Office (archived)");
     expect(markup).toContain("PI date: 18 Oct 2026 – 24 Oct 2026");

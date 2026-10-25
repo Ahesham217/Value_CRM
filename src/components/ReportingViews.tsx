@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { displayStatusLabel, formatDate, formatMoney } from "../lib/format";
 import { collectionLabel } from "../lib/payment-tracking";
@@ -11,6 +11,7 @@ import {
   PAYMENT_VIEW_LABELS,
   PAYMENT_VIEWS,
   PAYMENTS_NOTE,
+  REPORT_CURRENCIES,
   bucketAmount,
   collectionPath,
   coverageText,
@@ -32,11 +33,21 @@ import {
   PI_PERIOD_LABELS,
   RECEIPT_PERIOD_LABELS,
 } from "../lib/reporting";
-import { StatusBadge, tdClass, thClass } from "./ui";
-
-export function choiceClass(selected: boolean): string {
-  return `h-10 rounded-md px-3 text-sm ${selected ? "bg-primary-soft font-medium text-primary" : "border border-line bg-white text-ink hover:bg-canvas"}`;
-}
+import {
+  CurrencyBlock,
+  CurrencyStrip,
+  Disclosure,
+  Segmented,
+  StatusBadge,
+  bodyRowClass,
+  clickableRowClass,
+  linkClass,
+  segmentItemClass,
+  tableWrapClass,
+  tdClass,
+  thClass,
+  theadClass,
+} from "./ui";
 
 export function PeriodChoices({
   label,
@@ -50,13 +61,19 @@ export function PeriodChoices({
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="flex flex-wrap gap-2" role="group" aria-label={label}>
+    <Segmented label={label}>
       {periods.map((period) => (
-        <button key={period.id} type="button" className={choiceClass(period.id === value)} aria-pressed={period.id === value} onClick={() => onChange(period.id)}>
+        <button
+          key={period.id}
+          type="button"
+          className={segmentItemClass(period.id === value)}
+          aria-pressed={period.id === value}
+          onClick={() => onChange(period.id)}
+        >
           {period.label}
         </button>
       ))}
-    </div>
+    </Segmented>
   );
 }
 
@@ -69,32 +86,32 @@ export function receiptPeriodChoices(): { id: ReceiptPeriod; label: string }[] {
 }
 
 export function ActivePiSummary({ report }: { report: ActiveReport }) {
+  const totals = REPORT_CURRENCIES.flatMap((currency) => {
+    const total = report.totals.find((item) => item.currency === currency);
+    return total ? [total] : [];
+  });
   return (
-    <div className="mb-3">
-      <p className="text-sm text-slate-700">{report.count} matching {report.count === 1 ? "PI" : "PIs"}. {piDateLabel(report.period)}.</p>
-      {report.totals.length === 0 ? (
-        <p className="mt-2 text-sm text-slate-600">No quoted totals in this result.</p>
+    <div className="mb-4">
+      <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 id="active-pis-heading" className="text-[18px] leading-6 font-semibold text-ink">Active PIs</h2>
+        <p className="text-sm text-secondary">{report.count} {report.count === 1 ? "PI" : "PIs"}</p>
+      </div>
+      <p className="mb-3 text-[13px] text-muted">Latest issued version per PI. {piDateLabel(report.period)}.</p>
+      {totals.length === 0 ? (
+        <p className="text-sm text-secondary">No quoted totals in this result.</p>
       ) : (
-        <div className="mt-2 overflow-x-auto rounded-[10px] border border-line bg-white">
-          <table className="min-w-full text-left text-sm">
-            <thead className="bg-slate-50">
-              <tr>
-                <th className={thClass} scope="col">Currency</th>
-                <th className={`${thClass} text-right`} scope="col">Issued quoted total</th>
-                <th className={`${thClass} text-right`} scope="col">Draft total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {report.totals.map((total) => (
-                <tr key={total.currency} className="border-t border-slate-100">
-                  <td className={tdClass}>{total.currency}</td>
-                  <td className={`${tdClass} text-right tabular-nums`}>{formatMoney(total.issued, total.currency)}</td>
-                  <td className={`${tdClass} text-right tabular-nums`}>{formatMoney(total.draft, total.currency)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <CurrencyStrip columns={totals.length}>
+          {totals.map((total) => (
+            <CurrencyBlock
+              key={total.currency}
+              code={total.currency}
+              lines={[
+                { label: "Issued quoted total", value: formatMoney(total.issued, total.currency), tone: "strong" },
+                { label: "Draft total", value: formatMoney(total.draft, total.currency) },
+              ]}
+            />
+          ))}
+        </CurrencyStrip>
       )}
     </div>
   );
@@ -102,16 +119,16 @@ export function ActivePiSummary({ report }: { report: ActiveReport }) {
 
 export function ActivePiTable({ rows, amountCaption, onOpen }: { rows: ActivePiRow[]; amountCaption?: string; onOpen?: (id: string) => void }) {
   return (
-    <div className="overflow-x-auto rounded-[10px] border border-line bg-white">
+    <div className={tableWrapClass}>
       <table className="min-w-full text-left text-sm">
-        <thead className="bg-slate-50">
+        <thead className={theadClass}>
           <tr>
-            <th className={thClass} scope="col">PI number</th>
+            <th className={thClass} scope="col">PI</th>
             <th className={thClass} scope="col">Client</th>
             <th className={thClass} scope="col">PI date</th>
             <th className={thClass} scope="col">Office</th>
-            <th className={`${thClass} text-right`} scope="col">{amountCaption ?? "Quoted total"}</th>
-            <th className={thClass} scope="col">Lead salesperson</th>
+            <th className={`${thClass} text-right`} scope="col">{amountCaption ?? "Amount"}</th>
+            <th className={thClass} scope="col">Lead</th>
             <th className={thClass} scope="col">Status</th>
           </tr>
         </thead>
@@ -119,7 +136,7 @@ export function ActivePiTable({ rows, amountCaption, onOpen }: { rows: ActivePiR
           {rows.map((row) => (
             <tr
               key={row.id}
-              className={`border-t border-slate-100 ${onOpen ? "cursor-pointer hover:bg-canvas" : ""}`}
+              className={onOpen ? clickableRowClass : bodyRowClass}
               onClick={(event) => {
                 if (!onOpen) return;
                 if (event.target instanceof Element && event.target.closest("a")) return;
@@ -127,14 +144,14 @@ export function ActivePiTable({ rows, amountCaption, onOpen }: { rows: ActivePiR
               }}
             >
               <td className={tdClass}>
-                <Link className="font-medium text-navy-900 underline" to={`/pis/${row.id}`}>{row.displayNumber}</Link>
-                {row.amountKind === "draft" ? <span className="mt-0.5 block text-xs text-slate-500">Draft total</span> : null}
-                {row.revisionDraftOpen ? <span className="mt-0.5 block text-xs text-slate-500">Revision draft open</span> : null}
+                <Link className={linkClass} to={`/pis/${row.id}`}>{row.displayNumber}</Link>
+                {row.amountKind === "draft" ? <span className="mt-0.5 block text-[12px] text-muted">Draft total</span> : null}
+                {row.revisionDraftOpen ? <span className="mt-0.5 block text-[12px] text-muted">Revision draft open</span> : null}
               </td>
               <td className={tdClass}>{row.clientName || "—"}</td>
               <td className={`${tdClass} whitespace-nowrap`}>{formatDate(row.piDate)}</td>
               <td className={tdClass}>{officePresetLabel(row.presetDisplayName, row.presetArchived)}</td>
-              <td className={`${tdClass} whitespace-nowrap text-right tabular-nums`}>{formatMoney(row.total, row.currency)}</td>
+              <td className={`${tdClass} text-right font-medium whitespace-nowrap tabular-nums`}>{formatMoney(row.total, row.currency)}</td>
               <td className={tdClass}>{leadLabel(row.leadName, row.leadActive)}</td>
               <td className={tdClass}><StatusBadge status={row.displayStatus} /></td>
             </tr>
@@ -148,31 +165,34 @@ export function ActivePiTable({ rows, amountCaption, onOpen }: { rows: ActivePiR
 export function CollectionSummaryTable({ summary }: { summary: CollectionSummary }) {
   return (
     <div>
-      <p className="mb-2 text-sm text-slate-700">{receivedLabel(summary.receiptPeriod)}.</p>
-      <div className="overflow-x-auto rounded-[10px] border border-line bg-white">
+      <p className="mb-3 text-[13px] text-muted">{receivedLabel(summary.receiptPeriod)}.</p>
+      <div className={tableWrapClass}>
         <table className="min-w-full text-left text-sm">
-          <thead className="bg-slate-50">
+          <thead className={theadClass}>
             <tr>
-              <th className={thClass} scope="col">Tracked balance</th>
+              <th className={thClass} scope="col">Status</th>
               {summary.currencies.map((currency) => (
                 <th key={currency.currency} className={`${thClass} text-right`} scope="col">{currency.currency}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {COLLECTION_BUCKETS.map((bucket) => (
-              <tr key={bucket} className="border-t border-slate-100">
-                <th className={`${tdClass} font-medium`} scope="row">{COLLECTION_BUCKET_LABELS[bucket]}</th>
-                {summary.currencies.map((currency) => (
-                  <td key={currency.currency} className={`${tdClass} text-right tabular-nums`}>
-                    <Link className="text-navy-900 underline" to={collectionPath({ bucket, currency: currency.currency, parentStatus: summary.parentStatus ?? "" })}>
-                      {formatMoney(bucketAmount(currency, bucket), currency.currency)}
-                    </Link>
-                  </td>
-                ))}
-              </tr>
-            ))}
-            <tr className="border-t border-slate-100">
+            {COLLECTION_BUCKETS.map((bucket) => {
+              const overdue = bucket === "overdue";
+              return (
+                <tr key={bucket} className={bodyRowClass}>
+                  <th className={`${tdClass} font-medium ${overdue ? "text-danger" : ""}`} scope="row">{COLLECTION_BUCKET_LABELS[bucket]}</th>
+                  {summary.currencies.map((currency) => (
+                    <td key={currency.currency} className={`${tdClass} text-right tabular-nums ${overdue ? "text-danger" : ""}`}>
+                      <Link className={overdue ? "font-medium text-danger underline" : linkClass} to={collectionPath({ bucket, currency: currency.currency, parentStatus: summary.parentStatus ?? "" })}>
+                        {formatMoney(bucketAmount(currency, bucket), currency.currency)}
+                      </Link>
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
+            <tr className={bodyRowClass}>
               <th className={`${tdClass} font-medium`} scope="row">Received</th>
               {summary.currencies.map((currency) => (
                 <td key={currency.currency} className={`${tdClass} text-right tabular-nums`}>{formatMoney(currency.received, currency.currency)}</td>
@@ -181,23 +201,36 @@ export function CollectionSummaryTable({ summary }: { summary: CollectionSummary
           </tbody>
         </table>
       </div>
-      <p className="mt-2 text-sm text-slate-600">Received counts each receipt once, by the date it was received. It is not a list of obligations, so it does not open Payments.</p>
+      <p className="mt-2 text-[13px] text-muted">Received counts each receipt once. It is not a list of obligations, so it does not open Payments.</p>
     </div>
   );
 }
 
 export function CoverageNote({ count }: { count: number }) {
   return (
-    <p className="text-sm text-slate-700">
-      {coverageText(count)}{" "}
-      <Link className="text-navy-900 underline" to="/dashboard?coverage=untracked">View these PIs</Link>
-    </p>
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-warning-soft px-4 py-3 text-sm text-ink">
+      <p>{coverageText(count)}</p>
+      <Link className="shrink-0 font-medium text-primary" to="/dashboard?coverage=untracked">View PIs</Link>
+    </div>
+  );
+}
+
+export function FiguresDisclosure() {
+  const [open, setOpen] = useState(false);
+  return (
+    <Disclosure title="How these figures work" open={open} onToggle={() => setOpen((current) => !current)}>
+      <div className="max-w-3xl space-y-2 text-sm text-secondary">
+        <p>{ACTIVE_PI_NOTE}</p>
+        <p>{COLLECTION_NOTE}</p>
+        <p>Quoted totals are not unpaid balances. A PI without a payment plan is counted separately, and its quoted total is not turned into an outstanding amount.</p>
+      </div>
+    </Disclosure>
   );
 }
 
 export function PaymentViewChoices({ location }: { location: PaymentLocation }) {
   return (
-    <div className="flex flex-wrap gap-2" role="group" aria-label="Payment view">
+    <Segmented label="Payment view">
       {PAYMENT_VIEWS.map((view) => {
         const href = paymentsPath({
           ...location,
@@ -207,92 +240,107 @@ export function PaymentViewChoices({ location }: { location: PaymentLocation }) 
           dueFrom: view === "awaiting" ? "" : location.dueFrom,
           dueTo: view === "awaiting" ? "" : location.dueTo,
         });
+        const selected = location.view === view;
         return (
-          <Link key={view} className={choiceClass(location.view === view)} to={href} aria-current={location.view === view ? "page" : undefined}>
+          <Link key={view} className={segmentItemClass(selected)} to={href} aria-current={selected ? "page" : undefined}>
             {PAYMENT_VIEW_LABELS[view]}
           </Link>
         );
       })}
-    </div>
+    </Segmented>
   );
 }
 
 export function PaymentTotals({ register }: { register: PaymentRegister }) {
   if (register.totals.length === 0) return null;
+  const totals = REPORT_CURRENCIES.flatMap((currency) => {
+    const total = register.totals.find((item) => item.currency === currency);
+    return total ? [total] : [];
+  });
   return (
-    <div className="mb-3 overflow-x-auto rounded-[10px] border border-line bg-white">
-      <table className="min-w-full text-left text-sm">
-        <thead className="bg-slate-50">
-          <tr>
-            <th className={thClass} scope="col">Currency</th>
-            <th className={`${thClass} text-right`} scope="col">Original</th>
-            <th className={`${thClass} text-right`} scope="col">Paid</th>
-            <th className={`${thClass} text-right`} scope="col">Outstanding</th>
-          </tr>
-        </thead>
-        <tbody>
-          {register.totals.map((total) => (
-            <tr key={total.currency} className="border-t border-slate-100">
-              <td className={tdClass}>{total.currency}</td>
-              <td className={`${tdClass} text-right tabular-nums`}>{formatMoney(total.original, total.currency)}</td>
-              <td className={`${tdClass} text-right tabular-nums`}>{formatMoney(total.paid, total.currency)}</td>
-              <td className={`${tdClass} text-right tabular-nums`}>{formatMoney(total.outstanding, total.currency)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="mb-4">
+      <CurrencyStrip columns={totals.length}>
+        {totals.map((total) => (
+          <CurrencyBlock
+            key={total.currency}
+            code={total.currency}
+            lines={[
+              { label: "Original", value: formatMoney(total.original, total.currency) },
+              { label: "Paid", value: formatMoney(total.paid, total.currency) },
+              { label: "Outstanding", value: formatMoney(total.outstanding, total.currency), tone: "strong" },
+            ]}
+          />
+        ))}
+      </CurrencyStrip>
     </div>
   );
 }
 
+function dueTone(row: PaymentRow): string {
+  if (showsOverdueMarker(row)) return "text-danger";
+  if (row.dueState === "due_today" && row.collectionStatus !== "paid" && row.collectionStatus !== "no_charge") return "text-warning";
+  if (!row.dueDate) return "text-secondary";
+  return "text-ink";
+}
+
+function collectionTone(status: string): string {
+  if (status === "paid") return "bg-success-soft text-success";
+  if (status === "partial") return "bg-warning-soft text-warning";
+  return "bg-table text-secondary";
+}
+
 export function PaymentTable({ rows, onOpen }: { rows: PaymentRow[]; onOpen?: (piId: string) => void }) {
   return (
-    <div className="overflow-x-auto rounded-[10px] border border-line bg-white">
-      <table className="min-w-full text-left text-sm">
-        <thead className="bg-slate-50">
+    <div className={tableWrapClass}>
+      <table className="min-w-[880px] text-left text-sm">
+        <thead className={theadClass}>
           <tr>
             <th className={thClass} scope="col">Due</th>
-            <th className={thClass} scope="col">Client</th>
-            <th className={thClass} scope="col">PI</th>
+            <th className={thClass} scope="col">Client and PI</th>
             <th className={thClass} scope="col">Payment</th>
             <th className={`${thClass} text-right`} scope="col">Original</th>
             <th className={`${thClass} text-right`} scope="col">Paid</th>
             <th className={`${thClass} text-right`} scope="col">Outstanding</th>
-            <th className={thClass} scope="col">Currency</th>
-            <th className={thClass} scope="col">Collection status</th>
-            <th className={thClass} scope="col">Lead salesperson</th>
-            <th className={thClass} scope="col">PI status</th>
+            <th className={thClass} scope="col">Lead</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => (
             <tr
               key={row.id}
-              className={`border-t border-slate-100 ${onOpen ? "cursor-pointer hover:bg-canvas" : ""}`}
+              className={onOpen ? clickableRowClass : bodyRowClass}
               onClick={(event) => {
                 if (!onOpen) return;
                 if (event.target instanceof Element && event.target.closest("a")) return;
                 onOpen(row.piId);
               }}
             >
-              <td className={tdClass}>
-                <span className="whitespace-nowrap">{row.dueDate ? formatDate(row.dueDate) : row.dueLabel}</span>
-                {showsOverdueMarker(row) ? <span className="mt-0.5 block text-xs text-red-800">Overdue</span> : null}
+              <td className={`${tdClass} ${dueTone(row)}`}>
+                <span className="block font-medium whitespace-nowrap">{row.dueDate ? formatDate(row.dueDate) : row.dueLabel}</span>
+                {showsOverdueMarker(row) ? <span className="mt-0.5 block text-[12px]">Overdue</span> : null}
+                {row.dueState === "due_today" && row.collectionStatus !== "paid" && row.collectionStatus !== "no_charge" ? (
+                  <span className="mt-0.5 block text-[12px]">Due today</span>
+                ) : null}
               </td>
-              <td className={tdClass}>{row.clientName || "—"}</td>
               <td className={tdClass}>
-                <Link className="font-medium text-navy-900 underline" to={paymentTrackingPath(row.piId)}>{row.trackedDisplayNumber}</Link>
-                <span className="mt-0.5 block text-xs text-slate-500">Tracked {row.trackedRevision && row.trackedRevision > 0 ? `R${row.trackedRevision}` : "original"}</span>
-                {row.revisionDiffers ? <span className="mt-0.5 block text-xs text-slate-500">Latest issued differs. Tracking stays on this revision.</span> : null}
+                <span className="block">{row.clientName || "—"}</span>
+                <Link className={linkClass} to={paymentTrackingPath(row.piId)}>{row.trackedDisplayNumber}</Link>
+                <span className="mt-0.5 block text-[12px] text-muted">Tracked {row.trackedRevision && row.trackedRevision > 0 ? `R${row.trackedRevision}` : "original"}</span>
+                {row.revisionDiffers ? <span className="mt-0.5 block text-[12px] text-muted">Latest issued differs. Tracking stays on this revision.</span> : null}
               </td>
-              <td className={tdClass}>{row.label}</td>
-              <td className={`${tdClass} text-right tabular-nums`}>{formatMoney(row.originalAmount, row.currency)}</td>
-              <td className={`${tdClass} text-right tabular-nums`}>{formatMoney(row.paidAmount, row.currency)}</td>
-              <td className={`${tdClass} text-right tabular-nums`}>{formatMoney(row.outstandingAmount, row.currency)}</td>
-              <td className={tdClass}>{row.currency}</td>
-              <td className={tdClass}>{collectionLabel(row.collectionStatus)}</td>
+              <td className={tdClass}>
+                <span className="block">{row.label}</span>
+                <span className="mt-1 flex flex-wrap items-center gap-1.5">
+                  <span className={`inline-flex rounded-md px-1.5 py-0.5 text-[12px] font-medium ${collectionTone(row.collectionStatus)}`}>
+                    {collectionLabel(row.collectionStatus)}
+                  </span>
+                  <span className="text-[12px] text-muted">{displayStatusLabel(row.parentStatus)}</span>
+                </span>
+              </td>
+              <td className={`${tdClass} text-right whitespace-nowrap tabular-nums`}>{formatMoney(row.originalAmount, row.currency)}</td>
+              <td className={`${tdClass} text-right whitespace-nowrap tabular-nums`}>{formatMoney(row.paidAmount, row.currency)}</td>
+              <td className={`${tdClass} text-right font-semibold whitespace-nowrap tabular-nums`}>{formatMoney(row.outstandingAmount, row.currency)}</td>
               <td className={tdClass}>{leadLabel(row.leadName, row.leadActive)}</td>
-              <td className={tdClass}>{displayStatusLabel(row.parentStatus)}</td>
             </tr>
           ))}
         </tbody>
@@ -302,7 +350,7 @@ export function PaymentTable({ rows, onOpen }: { rows: PaymentRow[]; onOpen?: (p
 }
 
 export function ReportCopy({ children }: { children: ReactNode }) {
-  return <p className="mb-3 max-w-3xl text-sm text-slate-600">{children}</p>;
+  return <p className="mb-3 max-w-3xl text-sm text-secondary">{children}</p>;
 }
 
 export function activePiCopy(): string {

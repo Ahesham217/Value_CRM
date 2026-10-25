@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
+import { usePageCrumbs } from "../components/page-chrome";
 import { Banner, Button, Disclosure, Field, Menu, PageHeader, TextArea, buttonClass, controlClass } from "../components/ui";
 import { errorText } from "../lib/errors";
 import { displayNumber, formatDate, formatMoney } from "../lib/format";
@@ -174,7 +175,12 @@ export function ClientDetailPage() {
     }
   }
 
-  if (loading) return <p className="text-sm text-slate-600">Loading client…</p>;
+  usePageCrumbs([
+    { label: "Clients", to: "/clients" },
+    { label: isNew ? "New client" : companyName || "Client" },
+  ]);
+
+  if (loading) return <p className="text-sm text-muted">Loading client…</p>;
 
   const primaryIndex = Math.max(contacts.findIndex((contact) => contact.is_primary), 0);
   const featured = contacts[primaryIndex] ?? emptyContact();
@@ -202,7 +208,7 @@ export function ClientDetailPage() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-3">
+    <form onSubmit={onSubmit} className="w-full max-w-[1120px] space-y-3">
       <PageHeader
         title={isNew ? "New client" : companyName || "Client"}
         subtitle={archivedAt ? "Archived clients stay on historical invoices." : undefined}
@@ -222,7 +228,7 @@ export function ClientDetailPage() {
       {error ? <Banner tone="error">{error}</Banner> : null}
       {message ? <Banner tone="success">{message}</Banner> : null}
       {!manage ? <Banner tone="info">You can view this client. An administrator has not given you permission to change clients.</Banner> : null}
-      <section className="rounded-[10px] border border-line bg-white p-6">
+      <section className="rounded-lg border border-line bg-white p-6">
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Company name">
             <input className={controlClass} required value={companyName} disabled={!manage} onChange={(event) => setCompanyName(event.target.value)} />
@@ -279,7 +285,7 @@ export function ClientDetailPage() {
           </div>
         </Disclosure>
         <Disclosure title="Additional contacts" summary={additionalSummary} open={contactsOpen} onToggle={() => setContactsOpen((current) => !current)}>
-          {additional.length === 0 ? <p className="text-sm text-slate-600">No additional contacts.</p> : (
+          {additional.length === 0 ? <p className="text-sm text-muted">No additional contacts.</p> : (
             <div className="space-y-3">
               {additional.map((contact) => (
                 <div key={contact.key} className="rounded-lg border border-line p-3">
@@ -296,19 +302,19 @@ export function ClientDetailPage() {
         </Disclosure>
       </section>
       {!isNew ? (
-        <section className="rounded-[10px] border border-line bg-white px-6">
+        <section className="rounded-lg border border-line bg-white px-6">
           <Disclosure
             title="Related PIs"
             summary={related.length === 0 ? "None visible to you" : `${related.length} PI${related.length === 1 ? "" : "s"}`}
             open={relatedOpen}
             onToggle={() => setRelatedOpen((current) => !current)}
           >
-            {related.length === 0 ? <p className="text-sm text-slate-600">No proforma invoices for this client are visible to you.</p> : (
+            {related.length === 0 ? <p className="text-sm text-muted">No proforma invoices for this client are visible to you.</p> : (
               <ul className="space-y-1 text-sm">
                 {related.map((pi) => (
                   <li key={pi.id}>
                     <Link className="font-medium text-navy-800 underline" to={`/pis/${pi.id}`}>{displayNumber(pi.pi_number, pi.latest_revision)}</Link>
-                    <span className="text-slate-600"> · {formatDate(pi.pi_date)} · {formatMoney(pi.display_total, pi.currency)}</span>
+                    <span className="text-muted"> · {formatDate(pi.pi_date)} · {formatMoney(pi.display_total, pi.currency)}</span>
                   </li>
                 ))}
               </ul>

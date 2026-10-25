@@ -90,15 +90,15 @@ export function CommitmentOptions({ productId, canManage }: { productId: string;
   }
 
   return (
-    <section className="rounded-[10px] border border-line bg-white p-6">
+    <section className="rounded-lg border border-line bg-white p-6">
       <h2 className="text-[15px] font-semibold text-ink">Subscription commitments</h2>
-      <p className="mt-1 text-sm text-slate-600">
+      <p className="mt-1 text-sm text-muted">
         Each active option is one duration and one currency. A PI uses the first-year price for its current total. Later years stay as a commitment and are not converted from another currency. Archive an option instead of deleting it when a draft still uses it.
       </p>
       {error ? <div className="mt-3"><Banner tone="error">{error}</Banner></div> : null}
       {message ? <div className="mt-3"><Banner tone="success">{message}</Banner></div> : null}
       <ul className="mt-4 space-y-2">
-        {options.length === 0 ? <li className="text-sm text-slate-600">No commitment options yet.</li> : null}
+        {options.length === 0 ? <li className="text-sm text-muted">No commitment options yet.</li> : null}
         {options.map((option) => (
           <li key={option.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line px-3 py-2 text-sm">
             <span>

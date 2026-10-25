@@ -190,6 +190,13 @@ export type EditorSnapshot = {
   notes: string;
 };
 
+/** Draft saved only after a successful save. A later edit replaces that with unsaved changes. */
+export function draftSaveLabel(dirty: boolean, saved: boolean): "" | "Draft saved" | "Unsaved changes" {
+  if (dirty) return "Unsaved changes";
+  if (saved) return "Draft saved";
+  return "";
+}
+
 /** Stable text for comparing a draft with the last loaded or saved copy. */
 export function editorFingerprint(snapshot: EditorSnapshot): string {
   return JSON.stringify({

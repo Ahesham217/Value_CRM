@@ -99,7 +99,7 @@ export function ProductPiHistory({ productId, refreshKey = 0 }: { productId: str
   }
 
   return (
-    <section className="rounded-[10px] border border-line bg-white" aria-labelledby="pi-history-heading">
+    <section className="rounded-lg border border-line bg-white" aria-labelledby="pi-history-heading">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-6 py-4">
         <div className="min-w-0">
           <h2 id="pi-history-heading" className="text-[15px] font-semibold text-ink">{PI_HISTORY_TITLE}</h2>
@@ -132,21 +132,21 @@ export function ProductPiHistory({ productId, refreshKey = 0 }: { productId: str
       {filtersOpen ? (
         <div id={filtersId} className="mx-6 mt-3 grid gap-3 rounded-md border border-line bg-canvas p-4 sm:grid-cols-3">
           <label className="text-sm">
-            <span className="mb-1 block font-medium text-slate-700">Client</span>
+            <span className="mb-1 block font-medium text-secondary">Client</span>
             <Select value={client} onChange={(event) => { setClient(event.target.value); resetPage(); }}>
               <option value="">All</option>
               {clientOptions.map((name) => <option key={name} value={name}>{name}</option>)}
             </Select>
           </label>
           <label className="text-sm">
-            <span className="mb-1 block font-medium text-slate-700">Currency</span>
+            <span className="mb-1 block font-medium text-secondary">Currency</span>
             <Select value={currency} onChange={(event) => { setCurrency(event.target.value); resetPage(); }}>
               <option value="">All</option>
               {currencyOptions.map((code) => <option key={code} value={code}>{code}</option>)}
             </Select>
           </label>
           <label className="text-sm">
-            <span className="mb-1 block font-medium text-slate-700">PI status</span>
+            <span className="mb-1 block font-medium text-secondary">PI status</span>
             <Select value={status} onChange={(event) => { setStatus(event.target.value); resetPage(); }}>
               <option value="">All</option>
               {statusOptions.map((code) => <option key={code} value={code}>{displayStatusLabel(code)}</option>)}
@@ -174,13 +174,13 @@ export function ProductPiHistory({ productId, refreshKey = 0 }: { productId: str
       <div className="px-6 py-4">
         {!loading && error ? (
           <div className="flex flex-wrap items-center gap-3" role="alert">
-            <p className="text-sm text-red-800">{error}</p>
+            <p className="text-sm text-danger">{error}</p>
             <Button type="button" variant="secondary" onClick={() => setReload((current) => current + 1)}>Retry</Button>
           </div>
         ) : null}
-        {loading ? <p className="text-sm text-slate-600" aria-live="polite">Loading PI history…</p> : null}
+        {loading ? <p className="text-sm text-muted" aria-live="polite">Loading PI history…</p> : null}
         {!loading && !error && result && result.rows.length === 0 ? (
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-muted">
             {chips.length > 0
               ? "No quotations match these filters."
               : "This product has not been quoted on a PI you can view."}
@@ -189,7 +189,7 @@ export function ProductPiHistory({ productId, refreshKey = 0 }: { productId: str
         {!loading && !error && result && result.rows.length > 0 ? (
           <div className="overflow-x-auto rounded-md border border-line">
             <table className="min-w-[960px] w-full text-left text-sm">
-              <thead className="bg-slate-50">
+              <thead className="bg-table">
                 <tr>
                   <th className={thClass} scope="col">PI / version</th>
                   <th className={thClass} scope="col">Client</th>
@@ -210,7 +210,7 @@ export function ProductPiHistory({ productId, refreshKey = 0 }: { productId: str
                   const legacy = historyLegacyDetail(row.match_kind);
                   return (
                     <Fragment key={row.row_id}>
-                      <tr className="border-t border-slate-100">
+                      <tr className="border-t border-line">
                         <td className={tdClass}>
                           <Link className="font-medium text-navy-900 underline" to={historyRowHref(row.source, row.pi_id, canEdit)}>
                             {source.title}
@@ -241,7 +241,7 @@ export function ProductPiHistory({ productId, refreshKey = 0 }: { productId: str
                         </td>
                       </tr>
                       {open ? (
-                        <tr className="border-t border-slate-100 bg-canvas">
+                        <tr className="border-t border-line bg-canvas">
                           <td id={detailsId} className="px-3 py-3" colSpan={8}>
                             <dl className="grid gap-3 text-sm sm:grid-cols-2">
                               <div>

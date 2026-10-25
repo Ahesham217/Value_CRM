@@ -157,7 +157,7 @@ Historical decision dates are **unknown** where the repository shows the impleme
 
 - Decision date: 2026-10-19
 - Documented: 2026-10-19
-- Status: Implemented
+- Status: Implemented. The colour palette and sidebar treatment are superseded by [DEC-022](#dec-022). Explicit save, optional sections, and applied-filter chips remain.
 - Decision: Present a draft PI as one document on a light neutral page, with a restrained blue accent and shared control sizes, while keeping everyday fields visible and optional fields behind labelled actions.
 - Reason: The first compact layout still looked like separate form cards, with uneven spacing and weak alignment. Staff need the same interaction model in a more deliberate business-document layout.
 - Consequences or limitations:
@@ -306,3 +306,24 @@ Value CRM already has `proforma_invoices.payment_schedule`, the payment function
   - Not in this version: next-action fields, follow-up dates or tasks, owner-help requests, milestone-date editing, reminder jobs, notifications, emails, renewal invoicing, vendor price confirmation, a pipeline, an accounting ledger, revenue recognition, and currency conversion.
   - The database functions are security definer, check an active profile, and call `can_read_pi` for every row, count, total, and lead choice. The public wrappers are security invoker. Anonymous execution is revoked. The migration adds no tables and one partial index for open receipts by `received_on`. On 25 October 2026 the SQL was applied to Value CRM before this frontend was served. The apply was recorded as the five migration names above because the migration API stored the reviewed statements in that order. The final definitions are the reviewed source. No business rows were created for the check. A session without an active profile receives “Sign in required.”
 - References: `supabase/migrations/20261023213000_owner_dashboard_payments.sql`, `supabase/tests/owner_dashboard_payments.sql`, `src/pages/Dashboard.tsx`, `src/pages/Payments.tsx`, `src/lib/reporting.ts`, `README.md`
+
+## DEC-022
+
+- Decision date: 2026-10-25
+- Documented: 2026-10-25
+- Status: Implemented in this frontend. Not deployed. No migration was added or applied.
+- Decision: Use one calm workspace presentation for the existing V1 screens. Share colours, type, controls, tables, and the signed-in shell. Do not add business features to make the screens match a reference layout.
+- Reason: Staff were moving between screens that did not share spacing, colour, or action weight. The references showed a readable internal tool. The written business rules stay ahead of any illustrative numbers or labels in those references.
+- Consequences or limitations:
+  - Page background, ink, navy, borders, and status colours are central tokens. The older navy aliases now point at that navy. Status badges use success, warning, and danger on their own, so a link colour change does not recolour Paid, Accepted, or Cancelled.
+  - The sidebar is about 216px, white, and always shows Workspace and Directory. Settings and Sign out sit at the bottom. Settings is still administrator-only. Proforma invoices remain the page after sign-in. There is no global search and no notification control.
+  - Below the laptop sidebar breakpoint, the same items open in the existing drawer. Focus trapping, Escape, and focus return stay as they were.
+  - Breadcrumbs in the compact header lead back to the parent list. The page keeps one title.
+  - One primary action is solid navy. Secondary actions are outlines. Quiet actions are text. Destructive actions stay labelled and separate.
+  - Tables use a light header, horizontal rules, left-aligned text, and right-aligned money. Rows that open a record keep a real link. Wide tables scroll inside the table.
+  - Dashboard keeps Active PIs and Collections. Issued quoted totals and draft totals stay separate. Collection windows are unchanged. Overdue amounts are the only figures in red. Received is still a receipt total and does not open Payments. Longer explanations sit under “How these figures work”.
+  - Payments keeps the existing views and filters. Outstanding remains the default. Client and PI, and the payment with its collection and parent status, can share a cell. Original, paid, and outstanding stay readable. A paid obligation is not labelled overdue. Partially paid is not styled as paid. There is still no second Record payment form.
+  - The PI editor is one white document on the page background. A complete payment schedule shows its generated wording and an Edit payment schedule control. Opening or closing that control does not save or discard the schedule. An incomplete schedule, a date-review warning, a conversion prompt, or an allocation error stays open with the fields. Save draft, Preview, and Generate PI keep their current handlers. Draft saved appears only after a successful save.
+  - User permissions are grouped for reading under PI access, Directory management, Payments, and Administration. Each checkbox still writes the same flag. No role bundles were added.
+  - PDF layout, snapshots, permissions, money, numbering, and database functions are unchanged. This decision does not deploy the frontend and does not apply a migration.
+- References: `src/index.css`, `src/components/ui.tsx`, `src/components/Shell.tsx`, `docs/ui-guidelines.md`, `README.md`

@@ -45,9 +45,9 @@ export const COLLECTION_BUCKET_LABELS: Record<CollectionBucket, string> = {
   outstanding: "Outstanding",
   overdue: "Overdue",
   due_today: "Due today",
-  next_7: "Due in the next 7 days",
-  next_30: "Due in the next 30 days",
-  unresolved: "Outstanding, date not set",
+  next_7: "Next 7 days",
+  next_30: "Next 30 days",
+  unresolved: "Date not set",
 };
 
 export const ACTIVE_PI_NOTE =

@@ -22,7 +22,7 @@ import { VendorsPage } from "./pages/Vendors";
 function RequireAuth() {
   const { session, profile, loading } = useAuth();
   if (loading) {
-    return <p className="p-8 text-sm text-slate-600">Loading…</p>;
+    return <p className="bg-canvas p-8 text-sm text-muted">Loading…</p>;
   }
   if (!session || !profile) return <Navigate to="/login" replace />;
   return <Shell />;

@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useAuth } from "../auth/AuthProvider";
 import { CompanyPresetSettings } from "../components/CompanyPresetSettings";
-import { Banner, Button, Field, PageHeader, Select, Tabs, TextArea, controlClass } from "../components/ui";
+import { Banner, Button, Field, LoadingNote, PageHeader, Select, Tabs, TextArea, controlClass, formSheetClass, linkClass, tableWrapClass, tdClass, thClass, theadClass } from "../components/ui";
+import { SETTINGS_ADMIN_MESSAGE, permissionFormGroups } from "../lib/user-form";
 import { errorText } from "../lib/errors";
 import { supabase } from "../lib/supabase";
 import type { DefaultTerms, PiVisibility } from "../lib/types";
@@ -91,9 +92,9 @@ export function SettingsPage() {
   }, [profile?.is_admin]);
 
   if (!profile?.is_admin) {
-    return <Banner tone="error">Only administrators can open Settings.</Banner>;
+    return <Banner tone="error">{SETTINGS_ADMIN_MESSAGE}</Banner>;
   }
-  if (loading) return <p className="text-sm text-slate-600">Loading settings…</p>;
+  if (loading) return <LoadingNote>Loading settings…</LoadingNote>;
 
   async function saveTerms(event: FormEvent) {
     event.preventDefault();
@@ -150,7 +151,7 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="space-y-3">
+    <div className={`${formSheetClass} space-y-3`}>
       <PageHeader title="Settings" />
       {error ? <Banner tone="error">{error}</Banner> : null}
       {message ? <Banner tone="success">{message}</Banner> : null}
@@ -166,12 +167,12 @@ export function SettingsPage() {
       />
       {tab === "company" ? <CompanyPresetSettings onError={setError} onMessage={setMessage} /> : null}
       {tab === "terms" && terms ? (
-        <section className="rounded-[10px] border border-line bg-white p-6">
-          <form onSubmit={saveTerms} className="grid gap-3">
+        <section className="rounded-lg border border-line bg-white p-6">
+          <form onSubmit={saveTerms} className="grid max-w-3xl gap-4">
             <div>
               <p className="text-[13px] font-medium text-muted">Legacy payment paragraph</p>
               <p className="mt-1 text-sm text-ink">{terms.payment_terms.trim() ? terms.payment_terms : "No legacy payment paragraph is stored."}</p>
-              <p className="mt-1 text-xs text-slate-500">This paragraph is kept for legacy compatibility. It is not copied onto new proforma invoices and it does not configure the payment schedule. New drafts use a payment schedule on the PI. Delivery, price basis, warranty, and notes are still copied onto each new draft.</p>
+              <p className="mt-1 text-xs text-muted">This paragraph is kept for legacy compatibility. It is not copied onto new proforma invoices and it does not configure the payment schedule. New drafts use a payment schedule on the PI. Delivery, price basis, warranty, and notes are still copied onto each new draft.</p>
             </div>
             <Field label="Delivery terms"><input className={controlClass} value={terms.delivery_terms} onChange={(event) => setTerms({ ...terms, delivery_terms: event.target.value })} /></Field>
             <Field label="Price basis"><input className={controlClass} value={terms.price_basis} onChange={(event) => setTerms({ ...terms, price_basis: event.target.value })} /></Field>
@@ -182,45 +183,45 @@ export function SettingsPage() {
         </section>
       ) : null}
       {tab === "users" ? (
-        <section className="rounded-[10px] border border-line bg-white p-6">
+        <section className="rounded-lg border border-line bg-white p-6">
           {userView === "list" ? (
             <>
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm text-slate-600">Invite or create each account. There is no public registration.</p>
+                <p className="text-sm text-secondary">Invite or create each account. There is no public registration.</p>
                 <Button type="button" variant="primary" onClick={openNewUser}>Add user</Button>
               </div>
-              <div className="overflow-x-auto">
+              <div className={tableWrapClass}>
                 <table className="min-w-full text-left text-sm">
-                  <thead className="text-xs text-slate-500">
+                  <thead className={theadClass}>
                     <tr>
-                      <th className="py-1.5 pr-3 font-medium">Name</th>
-                      <th className="py-1.5 pr-3 font-medium">Email</th>
-                      <th className="py-1.5 pr-3 font-medium">Access</th>
-                      <th className="py-1.5 pr-3 font-medium">Status</th>
-                      <th className="py-1.5 font-medium"><span className="sr-only">Actions</span></th>
+                      <th className={thClass} scope="col">Name</th>
+                      <th className={thClass} scope="col">Email</th>
+                      <th className={thClass} scope="col">Access</th>
+                      <th className={thClass} scope="col">Status</th>
+                      <th className={thClass} scope="col"><span className="sr-only">Actions</span></th>
                     </tr>
                   </thead>
                   <tbody>
                     {users.map((user) => (
-                      <tr key={user.id} className="border-t border-slate-100">
-                        <td className="py-1.5 pr-3">{user.full_name}</td>
-                        <td className="py-1.5 pr-3">{user.email}</td>
-                        <td className="py-1.5 pr-3">{user.is_admin ? "Administrator" : user.pi_visibility === "all" ? "All PIs" : "Associated PIs"}</td>
-                        <td className="py-1.5 pr-3">{user.is_active ? "Active" : "Disabled"}</td>
-                        <td className="py-1.5">
-                          <button type="button" className="text-navy-800 underline" onClick={() => openUser(user)}>Edit</button>
+                      <tr key={user.id} className="border-t border-line">
+                        <td className={tdClass}>{user.full_name}</td>
+                        <td className={tdClass}>{user.email}</td>
+                        <td className={tdClass}>{user.is_admin ? "Administrator" : user.pi_visibility === "all" ? "All PIs" : "Associated PIs"}</td>
+                        <td className={tdClass}>{user.is_active ? "Active" : <span className="font-medium text-danger">Disabled</span>}</td>
+                        <td className={tdClass}>
+                          <button type="button" className={linkClass} onClick={() => openUser(user)}>Edit</button>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-              <p className="mt-3 text-xs text-slate-500">Disabled users keep their name on issued invoices but cannot open company records.</p>
+              <p className="mt-3 text-[13px] text-muted">Disabled users keep their name on issued invoices but cannot open company records.</p>
             </>
           ) : (
-            <form onSubmit={submitUser} className="grid gap-3">
+            <form onSubmit={submitUser} className="grid max-w-3xl gap-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-sm font-semibold text-navy-950">{draftUser.id ? `Edit ${draftUser.full_name}` : "Add a user"}</h2>
+                <h2 className="text-[17px] font-semibold text-ink">{draftUser.id ? `Edit ${draftUser.full_name}` : "Add a user"}</h2>
                 <Button type="button" variant="secondary" onClick={() => setUserView("list")}>Back to users</Button>
               </div>
               {!draftUser.id ? (
@@ -241,33 +242,28 @@ export function SettingsPage() {
                   </Field>
                 ) : null}
               </div>
-              <fieldset className="grid gap-2 rounded-lg border border-line p-4 text-sm">
-                <legend className="px-1 font-medium text-slate-800">Account</legend>
-                <Check label="Active" checked={draftUser.is_active} onChange={(checked) => setDraftUser({ ...draftUser, is_active: checked })} />
-                <Check label="Administrator" hint="An administrator can do every action." checked={draftUser.is_admin} onChange={(checked) => setDraftUser({ ...draftUser, is_admin: checked })} />
-                <Check label="Can be assigned as a salesperson" checked={draftUser.is_salesperson} onChange={(checked) => setDraftUser({ ...draftUser, is_salesperson: checked })} />
-              </fieldset>
-              <fieldset className="grid gap-2 rounded-lg border border-line p-4 text-sm">
-                <legend className="px-1 font-medium text-slate-800">PI access</legend>
-                <Field label="PI visibility">
-                  <Select value={draftUser.pi_visibility} onChange={(event) => setDraftUser({ ...draftUser, pi_visibility: event.target.value as PiVisibility })}>
-                    <option value="associated">Only associated PIs</option>
-                    <option value="all">All PIs</option>
-                  </Select>
-                </Field>
-                <Check label="Create and edit drafts, revisions, and duplicates" checked={draftUser.can_edit_drafts} onChange={(checked) => setDraftUser({ ...draftUser, can_edit_drafts: checked })} />
-                <Check label="Generate PIs" checked={draftUser.can_generate_pis} onChange={(checked) => setDraftUser({ ...draftUser, can_generate_pis: checked })} />
-                <Check label="Manage payment tracking and record receipts" hint="Not granted automatically. Administrators already have this." checked={draftUser.can_manage_payments} onChange={(checked) => setDraftUser({ ...draftUser, can_manage_payments: checked })} />
-                <Check label="Reverse receipts" checked={draftUser.can_reverse_payments} onChange={(checked) => setDraftUser({ ...draftUser, can_reverse_payments: checked })} />
-                <Check label="Activate zero-value subscriptions" checked={draftUser.can_activate_zero_subscriptions} onChange={(checked) => setDraftUser({ ...draftUser, can_activate_zero_subscriptions: checked })} />
-              </fieldset>
-              <fieldset className="grid gap-2 rounded-lg border border-line p-4 text-sm">
-                <legend className="px-1 font-medium text-slate-800">Records</legend>
-                <Check label="Manage clients" checked={draftUser.can_manage_clients} onChange={(checked) => setDraftUser({ ...draftUser, can_manage_clients: checked })} />
-                <Check label="Manage vendors" checked={draftUser.can_manage_vendors} onChange={(checked) => setDraftUser({ ...draftUser, can_manage_vendors: checked })} />
-                <Check label="Manage products" checked={draftUser.can_manage_products} onChange={(checked) => setDraftUser({ ...draftUser, can_manage_products: checked })} />
-                <Check label="View purchase prices" checked={draftUser.can_view_purchase_prices} onChange={(checked) => setDraftUser({ ...draftUser, can_view_purchase_prices: checked })} />
-              </fieldset>
+              {permissionFormGroups.map((group) => (
+                <fieldset key={group.heading} className="grid gap-3 rounded-lg border border-line p-4 text-sm">
+                  <legend className="px-1 text-sm font-semibold text-ink">{group.heading}</legend>
+                  {group.heading === "PI access" ? (
+                    <Field label="PI visibility">
+                      <Select value={draftUser.pi_visibility} onChange={(event) => setDraftUser({ ...draftUser, pi_visibility: event.target.value as PiVisibility })}>
+                        <option value="associated">Only associated PIs</option>
+                        <option value="all">All PIs</option>
+                      </Select>
+                    </Field>
+                  ) : null}
+                  {group.checks.map((check) => (
+                    <Check
+                      key={check.key}
+                      label={check.label}
+                      hint={check.hint}
+                      checked={draftUser[check.key] === true}
+                      onChange={(checked) => setDraftUser({ ...draftUser, [check.key]: checked })}
+                    />
+                  ))}
+                </fieldset>
+              ))}
               <div>
                 <Button variant="primary" type="submit">{draftUser.id ? "Save user" : mode === "invite" ? "Send invitation" : "Create user"}</Button>
               </div>
@@ -295,7 +291,7 @@ function Check({
       <input className="mt-0.5" type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
       <span>
         {label}
-        {hint ? <span className="mt-0.5 block text-xs text-slate-500">{hint}</span> : null}
+        {hint ? <span className="mt-0.5 block text-xs text-muted">{hint}</span> : null}
       </span>
     </label>
   );

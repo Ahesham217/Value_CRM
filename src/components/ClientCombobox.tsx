@@ -109,7 +109,7 @@ export function ClientCombobox({
 
   return (
     <div>
-      <span id={`${baseId}-label`} className="mb-1 block text-sm font-medium text-slate-700">
+      <span id={`${baseId}-label`} className="mb-1 block text-sm font-medium text-secondary">
         Client
       </span>
       <div className="flex gap-2">
@@ -160,11 +160,11 @@ export function ClientCombobox({
           pickedRef.current = true;
         }}
       >
-        {loading ? <p className="px-3 py-2 text-sm text-slate-500">Searching…</p> : null}
-        {searchError ? <p className="px-3 py-2 text-sm text-red-800">{searchError}</p> : null}
-        {!loading && query.trim().length < 2 ? <p className="px-3 py-2 text-sm text-slate-500">Type at least 2 letters.</p> : null}
+        {loading ? <p className="px-3 py-2 text-sm text-muted">Searching…</p> : null}
+        {searchError ? <p className="px-3 py-2 text-sm text-danger">{searchError}</p> : null}
+        {!loading && query.trim().length < 2 ? <p className="px-3 py-2 text-sm text-muted">Type at least 2 letters.</p> : null}
         {!loading && query.trim().length >= 2 && results.length === 0 && !searchError ? (
-          <p className="px-3 py-2 text-sm text-slate-500">No matching clients.</p>
+          <p className="px-3 py-2 text-sm text-muted">No matching clients.</p>
         ) : null}
         {results.map((client, index) => (
           <button
@@ -173,7 +173,7 @@ export function ClientCombobox({
             type="button"
             role="option"
             aria-selected={index === activeIndex}
-            className={`block w-full px-3 py-2 text-left text-sm ${index === activeIndex ? "bg-navy-100" : "hover:bg-slate-50"}`}
+            className={`block w-full px-3 py-2 text-left text-sm ${index === activeIndex ? "bg-navy-100" : "hover:bg-table"}`}
             onMouseDown={(event) => {
               pickedRef.current = true;
               event.preventDefault();
@@ -182,7 +182,7 @@ export function ClientCombobox({
             onClick={() => choose(client)}
           >
             <span className="font-medium">{client.company_name}</span>
-            {client.country ? <span className="text-slate-600"> · {client.country}</span> : null}
+            {client.country ? <span className="text-muted"> · {client.country}</span> : null}
           </button>
         ))}
       </AnchoredList>

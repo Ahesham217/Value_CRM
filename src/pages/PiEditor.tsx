@@ -4,7 +4,8 @@ import { useAuth } from "../auth/AuthProvider";
 import { ClientCombobox } from "../components/ClientCombobox";
 import { PaymentScheduleSection } from "../components/PaymentScheduleSection";
 import { PiItemSection } from "../components/PiItemSection";
-import { Banner, Button, Disclosure, Field, Select, TextArea, buttonClass, controlClass } from "../components/ui";
+import { usePageCrumbs } from "../components/page-chrome";
+import { Banner, Button, Disclosure, DocumentSurface, Field, Select, TextArea, buttonClass, controlClass, formSheetClass, quietActionClass } from "../components/ui";
 import { toCatalogueProduct } from "../lib/catalogue";
 import { generateAndDownload, isIssuedDownloadError, previewDraftPdf, saveDraft } from "../lib/documents";
 import { errorText, isConflict } from "../lib/errors";
@@ -38,6 +39,7 @@ import {
   billingSummary,
   clientOptionalSummary,
   contactLine,
+  draftSaveLabel,
   editorFingerprint,
   moneyLabel,
   recordOptionalSummary,
@@ -747,7 +749,12 @@ export function PiEditorPage() {
     if (key === "tax") setTaxEnabled(false);
   }
 
-  if (loading) return <p className="text-sm text-slate-600">Loading draft…</p>;
+  usePageCrumbs([
+    { label: "Proforma invoices", to: "/pis" },
+    { label: piNumber ?? "New PI" },
+  ]);
+
+  if (loading) return <p className="text-sm text-muted">Loading draft…</p>;
   if (!ready) return <Banner tone="error">{error || "This draft could not be loaded."}</Banner>;
   if (!draftOpen) {
     return (
@@ -797,30 +804,26 @@ export function PiEditorPage() {
   const unpriced = lines.filter((line) => !isBlankPlaceholder(line) && line.unitPrice.trim() === "").length;
   const working = busy !== null || previewing;
   const dirty = baseline !== null && fingerprint !== baseline;
-  const saveStatus = dirty ? "Unsaved changes" : savedNotice ? "Draft saved" : "";
+  const saveStatus = draftSaveLabel(dirty, savedNotice);
 
   return (
-    <div>
-      <div className="sticky top-14 z-20 -mx-4 mb-6 bg-canvas/95 px-4 py-3 sm:-mx-6 sm:px-6 md:top-0 lg:-mx-8 lg:px-8">
-        <p className="text-[13px] text-muted">
-          <Link to="/pis" className="hover:text-ink">Proforma invoices</Link>
-          <span aria-hidden="true"> / </span>
-          <span>{piNumber ?? "New invoice"}</span>
-        </p>
-        <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <h1 className="text-[26px] font-semibold leading-8 tracking-tight text-ink">{piNumber ?? "New proforma invoice"}</h1>
-            <span className="rounded-full bg-white px-2 py-0.5 text-xs font-medium text-muted ring-1 ring-line">
+    <div className={formSheetClass}>
+      <div className="sticky top-[52px] z-20 mb-6 border-b border-line bg-canvas/95 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+            <h1 className="text-[26px] leading-[34px] font-semibold text-ink">{piNumber ?? "New proforma invoice"}</h1>
+            <span className="rounded-md bg-selected px-2 py-0.5 text-[12px] font-medium text-primary">
               {piNumber ? "Revision draft" : "Draft"}
             </span>
+            <span className={`text-[13px] font-medium ${dirty ? "text-warning" : "text-success"}`} role="status" aria-live="polite">{saveStatus}</span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {canEdit ? (
-              <Button type="button" variant={canGenerate ? "ghost" : "primary"} onClick={() => void onSave()} disabled={working}>
+              <Button type="button" variant={canGenerate ? "quiet" : "primary"} onClick={() => void onSave()} disabled={working}>
                 {busy === "save" ? "Saving…" : "Save draft"}
               </Button>
             ) : null}
-            <Button type="button" variant="accent" onClick={() => void onPreview()} disabled={working}>
+            <Button type="button" variant="secondary" onClick={() => void onPreview()} disabled={working}>
               {previewing ? "Preparing preview…" : "Preview"}
             </Button>
             {canGenerate ? (
@@ -873,8 +876,9 @@ export function PiEditorPage() {
         </div>
       ) : null}
 
-      <div className="rounded-[10px] border border-line bg-white px-5 py-6 sm:px-7 sm:py-7 lg:px-8">
-        <div className="grid gap-4 md:grid-cols-3">
+      <DocumentSurface>
+        <h2 className="text-[18px] font-semibold text-ink">Invoice details</h2>
+        <div className="mt-4 grid gap-4 md:grid-cols-3">
           <Field
             label="Office"
             hint={piNumber
@@ -888,7 +892,7 @@ export function PiEditorPage() {
               {officeChoices.map((preset) => <option key={preset.code} value={preset.code}>{presetOptionLabel(preset)}</option>)}
             </Select>
           </Field>
-          <Field label="Date">
+          <Field label="PI date">
             <input className={controlClass} type="date" disabled={!canEdit} value={piDate} onChange={(event) => setPiDate(event.target.value)} />
           </Field>
           <Field label="Valid until">
@@ -1033,6 +1037,7 @@ export function PiEditorPage() {
         </div>
 
         <div className="mt-8 border-t border-line pt-6">
+          <h2 className="mb-3 text-[18px] font-semibold text-ink">Items</h2>
       <PiItemSection
         lines={lines}
         currency={currency}
@@ -1060,8 +1065,8 @@ export function PiEditorPage() {
         </div>
 
         <div className="mt-8 grid items-start gap-8 border-t border-line pt-6 lg:grid-cols-[minmax(0,1fr)_22.5rem]">
-        <section className="order-2 lg:order-1">
-          <h2 className="text-[15px] font-semibold text-ink">Commercial terms</h2>
+        <section>
+          <h2 className="text-[18px] font-semibold text-ink">Commercial terms</h2>
           <div className="mt-4">
             <PaymentScheduleSection
               mode={paymentMode}
@@ -1098,7 +1103,7 @@ export function PiEditorPage() {
             />
           </div>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <Field label="Delivery">
+            <Field label="Delivery terms">
               <TextArea rows={2} disabled={!canEdit} value={deliveryTerms} onChange={(event) => setDeliveryTerms(event.target.value)} />
             </Field>
           </div>
@@ -1118,9 +1123,9 @@ export function PiEditorPage() {
             </Disclosure>
           </div>
         </section>
-        <section className="order-1 lg:order-2">
+        <section>
           <div className="text-sm">
-            {totals.error ? <p className="mb-2 text-red-800">{totals.error}</p> : null}
+            {totals.error ? <p className="mb-2 text-danger">{totals.error}</p> : null}
             <div className="flex items-baseline justify-between gap-3">
               <span className="text-muted">Subtotal</span>
               <span className="tabular-nums text-ink">{moneyLabel(totals.value?.subtotal, currency)}</span>
@@ -1131,7 +1136,7 @@ export function PiEditorPage() {
                 <span className="flex items-center gap-2 tabular-nums">
                   {row.display}
                   {canEdit ? (
-                    <button type="button" className="text-navy-800 underline" onClick={() => removeAdjustment(row.key)}>
+                    <button type="button" className={quietActionClass} onClick={() => removeAdjustment(row.key)}>
                       Remove
                     </button>
                   ) : null}
@@ -1205,20 +1210,19 @@ export function PiEditorPage() {
             </Disclosure>
             </div>
             <div className="mt-4 flex items-baseline justify-between gap-3 border-t border-line pt-3">
-              <span className="font-semibold text-ink">Total</span>
-              <span className="text-[22px] font-semibold leading-7 tabular-nums text-ink">{moneyLabel(totals.value?.grandTotal, currency)}</span>
+              <span className="text-[17px] font-semibold text-ink">Total</span>
+              <span className="text-[22px] leading-7 font-semibold text-ink tabular-nums">{moneyLabel(totals.value?.grandTotal, currency)}</span>
             </div>
             {!currency ? <p className="mt-1 text-xs text-muted">Currency not chosen.</p> : null}
             {unpriced > 0 ? (
-              <p className="mt-2 text-red-800">
+              <p className="mt-2 text-danger">
                 {unpriced === 1 ? "1 item still needs a selling price." : `${unpriced} items still need a selling price.`}
               </p>
             ) : null}
           </div>
         </section>
       </div>
-        <p className="mt-6 min-h-5 text-[13px] text-muted" role="status" aria-live="polite">{saveStatus}</p>
-      </div>
+      </DocumentSurface>
     </div>
   );
 }

@@ -1,4 +1,5 @@
-import { Banner, Button, Field, Select, TextArea, controlClass } from "./ui";
+import { useState } from "react";
+import { Banner, Button, Disclosure, Field, Select, TextArea, controlClass } from "./ui";
 import { formatMoney } from "../lib/format";
 import {
   advanceThenShipmentTemplate,
@@ -80,11 +81,13 @@ export function PaymentScheduleSection({
   onCancelReplacement: () => void;
   onSchedule: (schedule: PaymentSchedule) => void;
 }) {
+  const [scheduleEditorOpen, setScheduleEditorOpen] = useState(false);
+  const [sawScheduleBlock, setSawScheduleBlock] = useState(false);
   if (mode === "legacy") {
     return (
       <div>
         <h3 className="text-[15px] font-semibold text-ink">Legacy payment terms</h3>
-        <p className="mt-1 text-sm text-slate-600">
+        <p className="mt-1 text-sm text-muted">
           This draft still uses a payment paragraph. It can be issued as written. Replacing it creates a structured schedule. Opening or saving this draft does not erase the paragraph.
         </p>
         <div className="mt-3">
@@ -160,80 +163,18 @@ export function PaymentScheduleSection({
     update({ ...schedule, rows });
   }
 
-  return (
-    <div>
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="text-[15px] font-semibold text-ink">Payment schedule</h3>
-        {summaryText ? (
-          <p className="text-sm text-slate-600">{summaryText}</p>
-        ) : conversionMessage ? (
-          <p className="text-sm text-slate-600">The current subscription charge is payable 100% in advance.</p>
-        ) : (
-          <p className="text-sm text-slate-600">
-            {schedule.rows.length === 0 ? "No payments yet." : `${schedule.rows.length} ${schedule.rows.length === 1 ? "payment" : "payments"}`}
-          </p>
-        )}
-      </div>
-      {conversionMessage ? (
-        <div className="mt-3">
-          <Banner tone="info">
-            {conversionMessage}
-            {conversionRemoveLabels.length > 0 ? (
-              <p className="mt-2">Rows that will be removed: {conversionRemoveLabels.join(", ")}.</p>
-            ) : null}
-            {conversionRetainLabels.length > 0 ? (
-              <p className="mt-2">Rows that will be kept for the one-time amount: {conversionRetainLabels.join(", ")}.</p>
-            ) : null}
-            {canEdit && onConvert ? (
-              <button type="button" className="ml-2 underline" onClick={onConvert}>{conversionConfirmLabel}</button>
-            ) : null}
-          </Banner>
-        </div>
-      ) : null}
-      {allocationNote ? <p className="mt-3 text-sm text-slate-700">{allocationNote}</p> : null}
-      {residualRequired && schedule.schema_version === 2 ? (
-        <div className="mt-3">
-          <p className="text-sm text-slate-700">These charges are not on a priced line. Choose where they belong. This does not create a subscription price.</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <Button type="button" variant={schedule.residual_target === "subscription" ? "primary" : "secondary"} onClick={() => update({ ...schedule, residual_target: "subscription" })}>Subscription advance</Button>
-            <Button type="button" variant={schedule.residual_target === "one_time" ? "primary" : "secondary"} onClick={() => update({ ...schedule, residual_target: "one_time" })}>One-time schedule</Button>
-          </div>
-        </div>
-      ) : null}
-      {schedule.dates_need_review ? (
-        <div className="mt-3">
-          <Banner tone="info">
-            Fixed dates and before-shipment deadlines were cleared on this copy. Review them before issuing.
-            {canEdit ? (
-              <button type="button" className="ml-2 underline" onClick={() => update({ ...schedule, dates_need_review: false })}>
-                Mark dates reviewed
-              </button>
-            ) : null}
-          </Banner>
-        </div>
-      ) : null}
-      {schedule.no_payment_due ? (
-        <div className="mt-3">
-          <div className="flex flex-wrap items-center gap-3 text-sm">
-            <p>No payment due. This is only valid when the PI total is zero.</p>
-            {canEdit ? (
-              <button type="button" className="text-primary underline" onClick={() => onSchedule(recoverPaymentSchedule(schedule))}>
-                Use a payment schedule
-              </button>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
-      {!schedule.no_payment_due && grandTotal === "0.00" && canEdit ? (
-        <div className="mt-3">
-          <Button type="button" variant="secondary" onClick={() => update({ ...emptyPaymentSchedule(), no_payment_due: true })}>
-            No payment due
-          </Button>
-        </div>
-      ) : null}
-      {oneTimeIsZero ? (
-        <p className="mt-3 text-sm text-slate-700">This PI's current charge is payable 100% in advance. A separate 100% payment row is not required.</p>
-      ) : null}
+  const scheduleBlocking = issues.length > 0
+    || Boolean(conversionMessage)
+    || schedule.dates_need_review
+    || (residualRequired && schedule.schema_version === 2);
+  if (scheduleBlocking && !sawScheduleBlock) {
+    setSawScheduleBlock(true);
+    setScheduleEditorOpen(true);
+  } else if (!scheduleBlocking && sawScheduleBlock) {
+    setSawScheduleBlock(false);
+  }
+  const scheduleEditor = (
+    <>
       {!schedule.no_payment_due && !oneTimeIsZero && !conversionMessage && schedule.rows.length === 0 && canEdit ? (
         <div className="mt-3 flex flex-wrap gap-2">
           <Button type="button" variant="secondary" onClick={() => update(fullAdvanceTemplate())}>100% on confirmation</Button>
@@ -277,6 +218,114 @@ export function PaymentScheduleSection({
           ) : null}
         </div>
       ) : null}
+    </>
+  );
+  const scheduleFields = schedule.no_payment_due
+    ? null
+    : scheduleBlocking
+      ? scheduleEditor
+      : canEdit && (schedule.rows.length > 0 || !summaryText)
+        ? (
+          <Disclosure
+            quiet
+            title="Edit payment schedule"
+            open={scheduleEditorOpen}
+            onToggle={() => setScheduleEditorOpen((current) => !current)}
+          >
+            {scheduleEditor}
+          </Disclosure>
+        )
+        : null;
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-[17px] font-semibold text-ink">Payment schedule</h3>
+        {summaryText ? (
+          <p className="text-sm text-muted">{summaryText}</p>
+        ) : conversionMessage ? (
+          <p className="text-sm text-muted">The current subscription charge is payable 100% in advance.</p>
+        ) : (
+          <p className="text-sm text-muted">
+            {schedule.rows.length === 0 ? "No payments yet." : `${schedule.rows.length} ${schedule.rows.length === 1 ? "payment" : "payments"}`}
+          </p>
+        )}
+      </div>
+      {conversionMessage ? (
+        <div className="mt-3">
+          <Banner tone="info">
+            {conversionMessage}
+            {conversionRemoveLabels.length > 0 ? (
+              <p className="mt-2">Rows that will be removed: {conversionRemoveLabels.join(", ")}.</p>
+            ) : null}
+            {conversionRetainLabels.length > 0 ? (
+              <p className="mt-2">Rows that will be kept for the one-time amount: {conversionRetainLabels.join(", ")}.</p>
+            ) : null}
+            {canEdit && onConvert ? (
+              <button type="button" className="ml-2 underline" onClick={onConvert}>{conversionConfirmLabel}</button>
+            ) : null}
+          </Banner>
+        </div>
+      ) : null}
+      {allocationNote ? <p className="mt-3 text-sm text-secondary">{allocationNote}</p> : null}
+      {residualRequired && schedule.schema_version === 2 ? (
+        <div className="mt-3">
+          <p className="text-sm text-secondary">These charges are not on a priced line. Choose where they belong. This does not create a subscription price.</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button type="button" variant={schedule.residual_target === "subscription" ? "primary" : "secondary"} onClick={() => update({ ...schedule, residual_target: "subscription" })}>Subscription advance</Button>
+            <Button type="button" variant={schedule.residual_target === "one_time" ? "primary" : "secondary"} onClick={() => update({ ...schedule, residual_target: "one_time" })}>One-time schedule</Button>
+          </div>
+        </div>
+      ) : null}
+      {schedule.dates_need_review ? (
+        <div className="mt-3">
+          <Banner tone="info">
+            Fixed dates and before-shipment deadlines were cleared on this copy. Review them before issuing.
+            {canEdit ? (
+              <button type="button" className="ml-2 underline" onClick={() => update({ ...schedule, dates_need_review: false })}>
+                Mark dates reviewed
+              </button>
+            ) : null}
+          </Banner>
+        </div>
+      ) : null}
+      {schedule.no_payment_due ? (
+        <div className="mt-3">
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            <p>No payment due. This is only valid when the PI total is zero.</p>
+            {canEdit ? (
+              <button type="button" className="text-primary underline" onClick={() => onSchedule(recoverPaymentSchedule(schedule))}>
+                Use a payment schedule
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+      {!schedule.no_payment_due && grandTotal === "0.00" && canEdit ? (
+        <div className="mt-3">
+          <Button type="button" variant="secondary" onClick={() => update({ ...emptyPaymentSchedule(), no_payment_due: true })}>
+            No payment due
+          </Button>
+        </div>
+      ) : null}
+      {oneTimeIsZero ? (
+        <p className="mt-3 text-sm text-secondary">This PI's current charge is payable 100% in advance. A separate 100% payment row is not required.</p>
+      ) : null}
+      {preview && preview.rows.length > 0 ? (
+        <ul className="mt-3 space-y-1 text-sm text-ink">
+          {preview.rows.map((rowPreview) => {
+            const source = schedule.rows.find((row) => row.id === rowPreview.id);
+            const label = source?.label.trim() || "Payment";
+            return (
+              <li key={rowPreview.id} className="flex flex-wrap justify-between gap-3">
+                <span>{label}</span>
+                <span className="tabular-nums">{rowPreview.amount && currency ? formatMoney(rowPreview.amount, currency) : ""}</span>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+      {scheduleFields}
       {preview?.allocated && (usingAllocation ? percentageBase : grandTotal) ? (
         <p className="mt-3 text-sm tabular-nums text-ink">
           Allocated {formatMoney(preview.allocated, currency)} of {formatMoney(usingAllocation ? percentageBase : grandTotal, currency)}
@@ -286,11 +335,11 @@ export function PaymentScheduleSection({
         </p>
       ) : null}
       {issues.length > 0 ? (
-        <ul className="mt-2 space-y-1 text-sm text-red-800">
+        <ul className="mt-2 space-y-1 text-sm text-danger">
           {issues.map((issue) => <li key={`${issue.rowId ?? "schedule"}-${issue.message}`}>{issue.message}</li>)}
         </ul>
       ) : null}
-      <div className="mt-3 rounded-md border border-line bg-canvas px-3 py-2">
+      <div className="mt-3 rounded-lg border border-line bg-canvas px-3 py-2">
         <p className="text-xs font-medium text-muted">Customer payment terms</p>
         <p className="mt-1 text-sm text-ink">
           {summaryText ?? "The payment terms appear here when the schedule is complete. They are generated from the schedule and are not edited separately."}
@@ -347,9 +396,9 @@ function PaymentRowEditor({
         <p className="text-sm font-medium text-ink">{title}{amount && currency ? ` · ${formatMoney(amount, currency)}` : ""}</p>
         {canEdit ? (
           <div className="flex flex-wrap gap-2 text-sm">
-            <button type="button" className="text-primary underline disabled:text-slate-400" disabled={index === 0} onClick={() => onMove(-1)}>Move up</button>
-            <button type="button" className="text-primary underline disabled:text-slate-400" disabled={index === count - 1} onClick={() => onMove(1)}>Move down</button>
-            <button type="button" className="text-red-800 underline" onClick={onRemove}>Remove</button>
+            <button type="button" className="text-primary underline disabled:text-muted" disabled={index === 0} onClick={() => onMove(-1)}>Move up</button>
+            <button type="button" className="text-primary underline disabled:text-muted" disabled={index === count - 1} onClick={() => onMove(1)}>Move down</button>
+            <button type="button" className="text-danger underline" onClick={onRemove}>Remove</button>
           </div>
         ) : null}
       </div>
@@ -374,9 +423,9 @@ function PaymentRowEditor({
         <DueFields due={row.due} canEdit={canEdit} onChange={(due) => onChange({ due })} />
       )}
       {contractual ? <p className="mt-2 text-sm text-ink">Contractual: {contractual}</p> : null}
-      {pending ? <p className="mt-1 text-xs text-slate-500">Status: {pending}. This is not a due date and is not printed on the PI.</p> : null}
+      {pending ? <p className="mt-1 text-xs text-muted">Status: {pending}. This is not a due date and is not printed on the PI.</p> : null}
       {instalments && instalments.length > 0 ? (
-        <ul className="mt-2 space-y-1 text-sm text-slate-700">
+        <ul className="mt-2 space-y-1 text-sm text-secondary">
           {instalments.map((item) => (
             <li key={item.sequence} className="flex flex-wrap justify-between gap-2 tabular-nums">
               <span>Instalment {item.sequence}</span>
@@ -423,7 +472,7 @@ function AmountFields({
           <input className={controlClass} inputMode="decimal" disabled={!canEdit} value={row.amount.amount ?? ""} onChange={(event) => onChange({ amount: { type: "fixed", amount: blankToNull(event.target.value) } })} />
         </Field>
       ) : null}
-      {row.amount.type === "remainder" ? <p className="text-xs text-slate-500">This row takes whatever remains of the grand total after the other payments.</p> : null}
+      {row.amount.type === "remainder" ? <p className="text-xs text-muted">This row takes whatever remains of the grand total after the other payments.</p> : null}
     </div>
   );
 }

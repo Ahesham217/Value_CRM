@@ -169,7 +169,7 @@ export function CompanyPresetSettings({
     });
   }, []);
 
-  if (loading) return <p className="text-sm text-slate-600">Loading company presets…</p>;
+  if (loading) return <p className="text-sm text-muted">Loading company presets…</p>;
 
   const selected = presets.find((preset) => preset.code === selectedCode) ?? null;
   const draft = creating ? newDraft : selected ? (edits[selected.code] ?? draftFromPreset(selected)) : null;
@@ -327,7 +327,7 @@ export function CompanyPresetSettings({
     }
   }
 
-  if (!draft) return <p className="text-sm text-slate-600">No company presets are available.</p>;
+  if (!draft) return <p className="text-sm text-muted">No company presets are available.</p>;
 
   const prefix = locked
     ? sequences.find((sequence) => sequence.code === selected?.sequence_code)?.prefix ?? selected?.sequence_code ?? ""
@@ -352,7 +352,7 @@ export function CompanyPresetSettings({
   ]);
 
   return (
-    <section className="rounded-[10px] border border-line bg-white p-6">
+    <section className="rounded-lg border border-line bg-white p-6">
       <div className="flex flex-wrap gap-2" role="tablist" aria-label="Company presets">
         {presets.map((preset) => {
           const active = !creating && preset.code === selected?.code;
@@ -362,7 +362,7 @@ export function CompanyPresetSettings({
               type="button"
               role="tab"
               aria-selected={active}
-              className={`h-9 rounded-md px-3 text-sm ${active ? "bg-navy-900 font-semibold text-white" : "border border-slate-300 bg-white text-slate-800"}`}
+              className={`h-9 rounded-md px-3 text-sm ${active ? "bg-navy-900 font-semibold text-white" : "border border-slate-300 bg-white text-ink"}`}
               onClick={() => choosePreset(preset.code)}
             >
               {presetOptionLabel(preset)}
@@ -371,24 +371,24 @@ export function CompanyPresetSettings({
         })}
         <Button type="button" variant={creating ? "primary" : "secondary"} onClick={startNew}>Add preset</Button>
       </div>
-      <dl className="mt-3 grid gap-2 border-b border-slate-200 pb-3 text-sm sm:grid-cols-3">
+      <dl className="mt-3 grid gap-2 border-b border-line pb-3 text-sm sm:grid-cols-3">
         <div>
-          <dt className="text-xs text-slate-500">Preset</dt>
+          <dt className="text-xs text-muted">Preset</dt>
           <dd className="font-medium">{draft.display_name.trim() || "New preset"}</dd>
         </div>
         <div>
-          <dt className="text-xs text-slate-500">Currency</dt>
+          <dt className="text-xs text-muted">Currency</dt>
           <dd className="font-medium">{draft.currency || "Not chosen"}</dd>
         </div>
         <div>
-          <dt className="text-xs text-slate-500">Legal entity</dt>
+          <dt className="text-xs text-muted">Legal entity</dt>
           <dd className="font-medium">{draft.company_name.trim() || "Not set"}</dd>
         </div>
       </dl>
-      {selected && !creating ? <p className="mt-2 text-xs text-slate-500">Identifier {selected.code}. This does not change, and it is not the display name.</p> : null}
-      <p className={`mt-2 text-sm ${status === "Ready to issue" ? "text-emerald-800" : "text-red-800"}`}>{status}</p>
+      {selected && !creating ? <p className="mt-2 text-xs text-muted">Identifier {selected.code}. This does not change, and it is not the display name.</p> : null}
+      <p className={`mt-2 text-sm ${status === "Ready to issue" ? "text-emerald-800" : "text-danger"}`}>{status}</p>
       {locked ? (
-        <p className="mt-2 text-sm text-slate-700">
+        <p className="mt-2 text-sm text-secondary">
           This preset has already been used to issue a PI. Its office, currency, and numbering sequence stay as they were. Create a new preset to change them. Company, bank, logo, layout, and the display name can still be updated. Issued documents keep the details they were generated with.
         </p>
       ) : null}
@@ -456,7 +456,7 @@ export function CompanyPresetSettings({
           )}
         </Field>
       </div>
-      <h2 className="mb-2 mt-4 text-sm font-semibold text-navy-950">Company</h2>
+      <h2 className="mt-4 mb-2 text-[17px] font-semibold text-ink">Company</h2>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Legal company name"><input className={controlClass} value={draft.company_name} onChange={(event) => update({ company_name: event.target.value })} /></Field>
         <Field label="Address"><TextArea value={draft.address} onChange={(event) => update({ address: event.target.value })} /></Field>
@@ -471,13 +471,13 @@ export function CompanyPresetSettings({
             <Field label="Tax registration"><input className={controlClass} value={draft.tax_registration} onChange={(event) => update({ tax_registration: event.target.value })} /></Field>
             <Field label="Logo" hint="PNG, JPEG, or WebP under 400 KB. A new upload does not change issued PDFs.">
               <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void onLogo(event.target.files?.[0])} />
-              {draft.logo_base64 ? <img alt="" className="mt-2 h-10" src={`data:${draft.logo_content_type || "image/png"};base64,${draft.logo_base64}`} /> : <p className="mt-2 text-xs text-slate-500">No logo uploaded.</p>}
+              {draft.logo_base64 ? <img alt="" className="mt-2 h-10" src={`data:${draft.logo_content_type || "image/png"};base64,${draft.logo_base64}`} /> : <p className="mt-2 text-xs text-muted">No logo uploaded.</p>}
             </Field>
           </div>
         </Disclosure>
       </div>
-      <h2 className="mb-1 mt-4 text-sm font-semibold text-navy-950">Bank account{draft.display_name.trim() ? ` for ${draft.display_name.trim()}` : ""}</h2>
-      <p className="mb-2 text-xs text-slate-500">These account details belong only to this preset. Account number, IBAN, and SWIFT are stored as text, including leading zeroes.</p>
+      <h2 className="mt-4 mb-1 text-[17px] font-semibold text-ink">Bank account{draft.display_name.trim() ? ` for ${draft.display_name.trim()}` : ""}</h2>
+      <p className="mb-2 text-xs text-muted">These account details belong only to this preset. Account number, IBAN, and SWIFT are stored as text, including leading zeroes.</p>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Bank name"><input className={controlClass} value={draft.bank_name} onChange={(event) => update({ bank_name: event.target.value })} /></Field>
         <Field label="Account name"><input className={controlClass} value={draft.account_name} onChange={(event) => update({ account_name: event.target.value })} /></Field>
@@ -500,7 +500,7 @@ export function CompanyPresetSettings({
       <Button className="mt-4" variant="primary" type="button" disabled={saving} onClick={() => void save()}>
         {saving ? "Saving…" : creating ? "Add preset" : `Save ${draft.display_name.trim() || "preset"}`}
       </Button>
-      {draft.layout ? <p className="mt-2 text-xs text-slate-500">{layoutLabel(draft.layout)} prints the company and bank details saved on the preset.</p> : null}
+      {draft.layout ? <p className="mt-2 text-xs text-muted">{layoutLabel(draft.layout)} prints the company and bank details saved on the preset.</p> : null}
     </section>
   );
 }

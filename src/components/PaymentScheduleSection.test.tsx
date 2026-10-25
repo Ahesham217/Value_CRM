@@ -1,7 +1,7 @@
 import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { advanceThenShipmentTemplate } from "../lib/payment-schedule";
+import { advanceThenShipmentTemplate, fullAdvanceTemplate, previewPaymentSchedule } from "../lib/payment-schedule";
 import { NO_ONE_TIME_AMOUNT_MESSAGE, previewAllocatedPayment } from "../lib/subscription";
 import type { PaymentSchedule } from "../lib/payment-schedule";
 import { PaymentScheduleSection, recoverPaymentSchedule } from "./PaymentScheduleSection";
@@ -207,5 +207,41 @@ describe("payment section allocation output", () => {
     expect(html).toContain("Confirm removal and update allocation");
     expect(html).not.toContain("100% on confirmation");
     expect(html).not.toContain(ZERO_TOTAL);
+  });
+
+  it("keeps a complete schedule readable and does not save or discard it when the editor is closed", () => {
+    const schedule = fullAdvanceTemplate();
+    const preview = previewPaymentSchedule(schedule, "USD", "100.00");
+    expect(preview.issues).toEqual([]);
+    expect(preview.customerText).toBeTruthy();
+    const updates: PaymentSchedule[] = [];
+    const html = markup({
+      schedule,
+      grandTotal: "100.00",
+      currency: "USD",
+      percentageOf: "grand_total",
+      onSchedule: (next) => { updates.push(next); },
+    });
+    expect(html).toContain("Edit payment schedule");
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain(preview.customerText ?? "");
+    expect(html).toContain("USD 100.00");
+    expect(html).not.toContain(">Percentage<");
+    expect(updates).toEqual([]);
+    expect(schedule.rows.length).toBeGreaterThan(0);
+  });
+
+  it("keeps an incomplete schedule open with its fields and errors", () => {
+    const schedule = emptyAllocation();
+    const html = markup({
+      schedule,
+      grandTotal: "100.00",
+      percentageBase: "100.00",
+      allocationIssues: [{ rowId: null, message: "The one-time amount is not allocated." }],
+    });
+    expect(html).toContain("The one-time amount is not allocated.");
+    expect(html).toContain("100% on confirmation");
+    expect(html).toContain("Add payment");
+    expect(html).not.toContain("Edit payment schedule");
   });
 });
