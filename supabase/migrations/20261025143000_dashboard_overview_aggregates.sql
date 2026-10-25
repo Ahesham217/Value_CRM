@@ -2,7 +2,8 @@
 -- Additive read-only fields on the existing report functions.
 -- Does not add tables, rewrite snapshots, plans, receipts, allocations, or counters.
 -- Apply after 20261023213000_owner_dashboard_payments.sql.
--- Do not edit or re-apply older migrations. Do not run this file on Value CRM until rollout.
+-- Applied to Value CRM on 25 October 2026 as 20261025121051 dashboard_overview_aggregates.
+-- Do not run this file or that recorded part again. Do not re-apply older migrations.
 
 create or replace function private.active_pi_report(
   p_period text,

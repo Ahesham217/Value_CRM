@@ -72,7 +72,7 @@ supabase db query --linked -f supabase/migrations/20261023213000_owner_dashboard
 supabase db query --linked -f supabase/migrations/20261025143000_dashboard_overview_aggregates.sql
 ```
 
-The last file in that list, `20261025143000_dashboard_overview_aggregates.sql`, has not been applied to Value CRM. Its rollout is with the dashboard notes below. Do not run it against Verifications or Value-Website.
+The last file in that list, `20261025143000_dashboard_overview_aggregates.sql`, was applied to Value CRM on 25 October 2026. Do not run it again. Its recorded name is below. Do not run it against Verifications or Value-Website.
 
 The first migration installs `public.rls_auto_enable()` and the `ensure_rls` event trigger. That is the same automatic RLS trigger used on the other Value Technologies projects: every new table in `public` gets row level security. The trigger does not create policies. This repo creates those policies explicitly and also enables RLS in the table statements.
 
@@ -136,13 +136,9 @@ The production frontend that calls these functions is the merge of that reportin
 
 Do not drop these functions while this frontend is in use. Dropping them only removes the reports. It does not delete invoices, plans, or receipts. Issued snapshots are not rewritten.
 
-`20261025143000_dashboard_overview_aggregates.sql` has not been applied to Value CRM. It was not applied to Verifications or Value-Website. Do not run older migrations again in order to apply it. It replaces the read-only `active_pi_report` and `collection_summary` functions with the same arguments and the same existing fields, and adds status counts, disjoint due buckets (`due_1_7`, `due_8_30`, `due_after_30`), and a visible `plan_count` for each currency. `plan_count` counts visible payment plans, including a plan with no obligations. It adds no tables, so the existing `ensure_rls` trigger is unchanged. It does not read purchase prices and does not rewrite snapshots, plans, receipts, allocations, subscriptions, counters, or permissions. Anonymous execution stays revoked.
+`20261025143000_dashboard_overview_aggregates.sql` was applied to Value CRM on 25 October 2026. It was not applied to Verifications or Value-Website. Do not run the file again. The migration API recorded it as one part: `20261025121051 dashboard_overview_aggregates`. It replaces the read-only `active_pi_report` and `collection_summary` functions with the same arguments and the same existing fields, and adds status counts, disjoint due buckets (`due_1_7`, `due_8_30`, `due_after_30`), and a visible `plan_count` for each currency. `plan_count` counts visible payment plans, including a plan with no obligations. It adds no tables, so the existing `ensure_rls` trigger is unchanged. It does not read purchase prices and does not rewrite snapshots, plans, receipts, allocations, subscriptions, counters, or permissions. Anonymous execution stays revoked. The company-preset migration and the earlier dashboard migration were already present and were not run again.
 
-Apply it only to Value CRM (`idhqrvrpzlkpyyqlkozl`), and only in this order:
-
-1. Apply `20261025143000_dashboard_overview_aggregates.sql`. Do not re-apply `20261023213000_owner_dashboard_payments.sql` or any older file.
-2. Serve this frontend after that SQL. Reload the app. An older tab keeps the previous dashboard until it loads this build. It can still prepare PIs.
-3. This frontend reads the new fields. Before step 1 it shows a report error and Retry rather than a zero balance. An older frontend ignores the new fields and can stay on the previous dashboard.
+The production frontend that calls these fields is the merge of that dashboard change. After the Cloudflare production build for that merge succeeds, reload the app. An older tab keeps the previous dashboard until it loads this build. It can still prepare PIs.
 
 Do not drop the replaced functions while this frontend is in use. Restoring the previous function bodies from `20261023213000_owner_dashboard_payments.sql` removes the new totals only. It does not delete invoices, plans, or receipts. Issued snapshots are not rewritten.
 
