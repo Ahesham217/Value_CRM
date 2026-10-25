@@ -54,13 +54,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const tokenRef = useRef(0);
   const pendingRef = useRef(0);
 
-  const finishPending = useCallback(() => {
+  const mountedRef = useRef(true);
+
+  const failAccountCheck = useCallback((token: number) => {
+    if (!mountedRef.current || tokenRef.current !== token) return;
+    setAccountCheckError(ACCOUNT_CHECK_FAILED_MESSAGE);
+    setLoading(false);
+  }, []);
+
+  const finishPending = useCallback((token: number) => {
     pendingRef.current = Math.max(0, pendingRef.current - 1);
+    if (!mountedRef.current || tokenRef.current !== token) return;
     if (pendingRef.current === 0) setLoading(false);
   }, []);
 
   const applyLookup = useCallback(async (next: Session | null, token: number, lookup: ProfileLookup | null) => {
-    if (tokenRef.current !== token) return;
+    if (!mountedRef.current || tokenRef.current !== token) return;
     if (!next) {
       sessionRef.current = null;
       profileRef.current = null;
@@ -87,6 +96,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!profileRef.current) setAccountCheckError(ACCOUNT_CHECK_FAILED_MESSAGE);
       return;
     }
+    if (!mountedRef.current || tokenRef.current !== token) return;
     tokenRef.current += 1;
     sessionRef.current = null;
     profileRef.current = null;
@@ -94,87 +104,100 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAccountCheckError(null);
     setSession(null);
     setProfile(null);
+    setLoading(false);
     await supabase.auth.signOut();
   }, []);
 
   const applySession = useCallback(async (next: Session | null, token: number) => {
-    if (tokenRef.current !== token) return;
+    if (!mountedRef.current || tokenRef.current !== token) return;
     pendingRef.current += 1;
-    if (next && profileRef.current && profileRef.current.id !== next.user.id) {
-      profileRef.current = null;
-      setProfile(null);
-    }
-    sessionRef.current = next;
-    setSession(next);
     try {
-      if (tokenRef.current !== token) return;
+      if (!mountedRef.current || tokenRef.current !== token) return;
+      if (next && profileRef.current && profileRef.current.id !== next.user.id) {
+        profileRef.current = null;
+        setProfile(null);
+      }
+      sessionRef.current = next;
+      setSession(next);
       if (!next) {
         await applyLookup(null, token, null);
         return;
       }
       const lookup = await dedupeInflight(profileRequests, next.user.id, () => readProfile(next.user.id));
+      if (!mountedRef.current || tokenRef.current !== token) return;
       await applyLookup(next, token, lookup);
     } finally {
-      finishPending();
+      finishPending(token);
     }
   }, [applyLookup, finishPending]);
 
+  const acquireSession = useCallback(async (token: number) => {
+    let result: Awaited<ReturnType<typeof supabase.auth.getSession>>;
+    try {
+      result = await withTimeout(supabase.auth.getSession(), PROFILE_REQUEST_TIMEOUT_MS, "Session check");
+    } catch {
+      failAccountCheck(token);
+      return;
+    }
+    if (result.error) {
+      failAccountCheck(token);
+      return;
+    }
+    if (!mountedRef.current || tokenRef.current !== token) return;
+    await applySession(result.data.session, token);
+  }, [applySession, failAccountCheck]);
+
   const refreshProfile = useCallback(async () => {
     const current = sessionRef.current;
-    if (!current) return;
+    if (!current || !mountedRef.current) return;
     const token = ++tokenRef.current;
     const lookup = await dedupeInflight(profileRequests, current.user.id, () => readProfile(current.user.id));
-    if (tokenRef.current !== token || sessionRef.current?.user.id !== current.user.id) return;
+    if (!mountedRef.current || tokenRef.current !== token || sessionRef.current?.user.id !== current.user.id) return;
     await applyLookup(current, token, lookup);
   }, [applyLookup]);
 
   const retryAccountCheck = useCallback(async () => {
+    if (!mountedRef.current) return;
+    const token = ++tokenRef.current;
     setLoading(true);
     setAccountCheckError(null);
-    const { data, error } = await supabase.auth.getSession();
-    if (error) {
-      setAccountCheckError(ACCOUNT_CHECK_FAILED_MESSAGE);
-      setLoading(false);
-      return;
-    }
-    const token = ++tokenRef.current;
-    await applySession(data.session, token);
-  }, [applySession]);
+    await acquireSession(token);
+  }, [acquireSession]);
 
   const signOut = useCallback(async () => {
     tokenRef.current += 1;
     sessionRef.current = null;
     profileRef.current = null;
-    setSession(null);
-    setProfile(null);
-    setAccountCheckError(null);
+    if (mountedRef.current) {
+      setSession(null);
+      setProfile(null);
+      setAccountCheckError(null);
+      setLoading(false);
+    }
     await supabase.auth.signOut();
   }, []);
 
   useEffect(() => {
-    let active = true;
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
     const getSessionToken = ++tokenRef.current;
     const { data } = supabase.auth.onAuthStateChange((_event, next) => {
       const token = ++tokenRef.current;
       setTimeout(() => {
-        if (!active || tokenRef.current !== token) return;
+        if (!mountedRef.current || tokenRef.current !== token) return;
         void applySession(next, token);
       }, 0);
     });
-    void supabase.auth.getSession().then(({ data: sessionData, error }) => {
-      if (!active || tokenRef.current !== getSessionToken) return;
-      if (error) {
-        setAccountCheckError(ACCOUNT_CHECK_FAILED_MESSAGE);
-        setLoading(false);
-        return;
-      }
-      void applySession(sessionData.session, getSessionToken);
-    });
+    void acquireSession(getSessionToken);
     return () => {
-      active = false;
       data.subscription.unsubscribe();
     };
-  }, [applySession]);
+  }, [acquireSession, applySession]);
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;

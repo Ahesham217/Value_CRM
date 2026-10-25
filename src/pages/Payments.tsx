@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { PaymentTable, PaymentTotals, PaymentViewChoices, emptyPaymentsCopy, paymentsCopy } from "../components/ReportingViews";
 import { EmptyState, Field, FilterChip, FilterPanel, FiltersButton, LoadingNote, PageHeader, Pagination, SearchField, Select, Toolbar, controlClass, quietActionClass } from "../components/ui";
@@ -28,6 +28,8 @@ export function PaymentsPage() {
   const location = parsePaymentLocation(params);
   const [searchText, setSearchText] = useState(location.search);
   const debouncedSearch = useDebouncedValue(searchText, SEARCH_DEBOUNCE_MS);
+  const searchTyped = useRef(false);
+  const publishedSearch = useRef<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [presetOptions, setPresetOptions] = useState<{ code: string; label: string }[]>([]);
   const [register, setRegister] = useState<PaymentRegister | null>(null);
@@ -89,16 +91,27 @@ export function PaymentsPage() {
     setParams(paymentSearchParams(withListChange(location, patch)));
   }
 
+  // A URL change must cancel a pending typed search before the publish effect can write it back.
   useEffect(() => {
+    if (publishedSearch.current !== null && publishedSearch.current === location.search) {
+      publishedSearch.current = null;
+      return;
+    }
+    publishedSearch.current = null;
+    searchTyped.current = false;
     setSearchText(location.search);
   }, [location.search]);
 
   useEffect(() => {
+    if (!searchTyped.current) return;
+    if (debouncedSearch !== searchText) return;
     if (debouncedSearch === location.search) return;
+    publishedSearch.current = debouncedSearch;
+    searchTyped.current = false;
     update({ search: debouncedSearch });
-    // update is recreated each render and writes the debounced search into the address.
+    // `update` closes over the filters from this render. Only a search typed by the person is published.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearch, location.search]);
+  }, [debouncedSearch, location.search, searchText]);
 
   const leadName = register?.leads.find((lead) => lead.id === location.lead);
   const chips = [
@@ -122,7 +135,15 @@ export function PaymentsPage() {
       </div>
       <div className="mb-3">
         <Toolbar>
-          <SearchField label="Search PI or client" placeholder="Search PI or client" value={searchText} onChange={(event) => setSearchText(event.target.value)} />
+          <SearchField
+            label="Search PI or client"
+            placeholder="Search PI or client"
+            value={searchText}
+            onChange={(event) => {
+              searchTyped.current = true;
+              setSearchText(event.target.value);
+            }}
+          />
           <label className="w-40 shrink-0">
             <span className="sr-only">Currency</span>
             <Select value={location.currency} onChange={(event) => update({ currency: event.target.value })}>
@@ -202,7 +223,11 @@ export function PaymentsPage() {
           <button
             type="button"
             className={quietActionClass}
-            onClick={() => update({ currency: "", preset: "", lead: "", collectionStatus: "", parentStatus: "", dueFrom: "", dueTo: "", balance: "", search: "" })}
+            onClick={() => {
+              searchTyped.current = false;
+              publishedSearch.current = null;
+              update({ currency: "", preset: "", lead: "", collectionStatus: "", parentStatus: "", dueFrom: "", dueTo: "", balance: "", search: "" });
+            }}
           >
             Reset filters
           </button>
