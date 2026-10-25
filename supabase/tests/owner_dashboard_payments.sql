@@ -59,6 +59,7 @@ declare
   v_receipt_pi uuid;
   v_sub_pi uuid;
   v_zero_pi uuid;
+  v_empty uuid;
   v_instalment uuid;
   v_overdue uuid;
   v_due_today uuid;
@@ -943,6 +944,53 @@ begin
   v_report := public.active_pi_report('all', null, null, null, null, null, null, 'Report Secret ' || v_tag, 100, 0, 'active');
   if (v_report ->> 'count')::integer < 1 or v_report::text not like '%Report Secret ' || v_tag || '%' then
     v_fail := v_fail || 'admin search missed a visible client; ';
+  end if;
+
+  -- A zero-total one-time offer can be tracked with a plan and no obligations.
+  v_summary := public.collection_summary('last_7', null, null, null);
+  v_count := (v_summary #>> '{currencies,1,plan_count}')::integer;
+  v_amount := (v_summary #>> '{currencies,1,outstanding}')::numeric;
+  v_text := v_summary #>> '{currencies,1,received}';
+  v_schedule := jsonb_build_object(
+    'schema_version', 1, 'no_payment_due', true, 'dates_need_review', false, 'rows', '[]'::jsonb
+  );
+  v_lines := pg_temp.one_line(v_product, v_vendor, v_model, '0.00', 'unit');
+  v_made := pg_temp.make_pi('AE-USD', v_today, v_admin, null, v_client_secret, v_lines, v_schedule, true);
+  v_empty := (v_made ->> 'pi_id')::uuid;
+  perform public.start_payment_tracking(v_empty, (v_made ->> 'version_id')::uuid, true);
+  if (select count(*) from public.payment_plans where pi_id = v_empty) is distinct from 1
+    or (select count(*) from public.payment_obligations obligation
+      join public.payment_plans plan on plan.id = obligation.plan_id
+      where plan.pi_id = v_empty) is distinct from 0
+    or (select agreed_total from public.payment_plans where pi_id = v_empty) is distinct from 0
+  then
+    v_fail := v_fail || 'zero-total plan was not stored without obligations; ';
+  end if;
+  v_summary := public.collection_summary('last_7', null, null, null);
+  if (v_summary #>> '{currencies,1,plan_count}')::integer is distinct from v_count + 1
+    or (v_summary #>> '{currencies,1,outstanding}')::numeric is distinct from v_amount
+    or v_summary #>> '{currencies,1,received}' is distinct from v_text
+    or (v_summary #>> '{currencies,1,plan_count}')::integer is distinct from (
+      select count(*)::integer from public.payment_plans where currency = 'USD'
+    )
+    or (select count(*) from public.payment_obligations obligation
+      join public.payment_plans plan on plan.id = obligation.plan_id
+      where plan.currency = 'USD') <= (v_summary #>> '{currencies,1,plan_count}')::integer
+  then
+    v_fail := v_fail || 'empty plan was missed or obligations multiplied the count ' || coalesce(v_summary::text, '') || '; ';
+  end if;
+  perform public.set_pi_tracking_status(v_empty, 'cancelled');
+  v_summary := public.collection_summary('last_7', null, null, 'issued');
+  v_again := public.collection_summary('last_7', null, null, 'cancelled');
+  v_register := public.collection_summary('last_7', null, null, null);
+  if (v_summary #>> '{currencies,1,plan_count}')::integer is distinct from v_count
+    or (v_summary #>> '{currencies,1,outstanding}')::numeric is distinct from v_amount
+    or (v_again #>> '{currencies,1,plan_count}')::integer is distinct from 1
+    or v_again #>> '{currencies,1,outstanding}' is distinct from '0.00'
+    or (v_register #>> '{currencies,1,plan_count}')::integer is distinct from v_count + 1
+    or (v_register #>> '{currencies,1,outstanding}')::numeric is distinct from v_amount
+  then
+    v_fail := v_fail || 'parent status did not filter the empty plan ' || coalesce(v_summary::text, '') || ' ' || coalesce(v_again::text, '') || '; ';
   end if;
 
   perform set_config('request.jwt.claim.sub', v_reader::text, true);

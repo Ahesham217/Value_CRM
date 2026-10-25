@@ -304,10 +304,23 @@ begin
       ), 0) as due_8_30,
       coalesce(sum(outstanding_amount) filter (
         where outstanding_amount > 0 and due_timing = 'fixed' and due_date > v_today + 30
-      ), 0) as due_after_30,
-      count(distinct plan_id)::integer as plan_count
+      ), 0) as due_after_30
     from obligations
     group by currency
+  ),
+  plans as (
+    select plan.currency, count(*)::integer as plan_count
+    from public.payment_plans plan
+    join public.proforma_invoices pi on pi.id = plan.pi_id
+    where private.can_read_pi(pi.id)
+      and (
+        v_parent is null
+        or private.pi_display_status(
+          pi.tracking_status,
+          exists (select 1 from public.pi_versions version where version.pi_id = pi.id)
+        ) = v_parent
+      )
+    group by plan.currency
   ),
   received as (
     select plan.currency, coalesce(sum(receipt.amount), 0) as received_amount
@@ -347,7 +360,7 @@ begin
           'due_1_7', private.payment_plain_amount(coalesce(buckets.due_1_7, 0)),
           'due_8_30', private.payment_plain_amount(coalesce(buckets.due_8_30, 0)),
           'due_after_30', private.payment_plain_amount(coalesce(buckets.due_after_30, 0)),
-          'plan_count', coalesce(buckets.plan_count, 0),
+          'plan_count', coalesce(plans.plan_count, 0),
           'received', private.payment_plain_amount(coalesce(received.received_amount, 0))
         )
         order by codes.ord
@@ -355,6 +368,7 @@ begin
       from (values ('EGP', 1), ('USD', 2), ('EUR', 3)) as codes(code, ord)
       left join buckets on buckets.currency = codes.code
       left join received on received.currency = codes.code
+      left join plans on plans.currency = codes.code
     ),
     'untracked_count', (
       select count(*)
@@ -372,5 +386,5 @@ end;
 $$;
 
 comment on function private.collection_summary(text, date, date, text) is
-  'Tracked collection balances for visible payment plans. Outstanding, overdue, due today, and upcoming windows use the remaining balance, not the original obligation. The next 7 days are inside the next 30 days. due_1_7 matches that next-7 window. due_8_30 is the eighth day through the thirtieth day. due_after_30 is later than that. Those three ranges, overdue, due today, and unresolved dates do not overlap. Unresolved dates are not overdue. plan_count is the number of visible plans in that currency, including plans whose remaining balance is zero. Received sums each non-reversed receipt once by received_on. Cancelled parent PIs stay included unless filtered. Untracked issued PIs are counted and are not given an invented balance. This does not follow the active-PI date filter.';
+  'Tracked collection balances for visible payment plans. Outstanding, overdue, due today, and upcoming windows use the remaining balance, not the original obligation. The next 7 days are inside the next 30 days. due_1_7 matches that next-7 window. due_8_30 is the eighth day through the thirtieth day. due_after_30 is later than that. Those three ranges, overdue, due today, and unresolved dates do not overlap. Unresolved dates are not overdue. plan_count counts visible payment_plans rows in that currency, including a plan with no obligations and a plan whose remaining balance is zero. Several obligations on one plan count once, and the count is not joined into the balance totals. Received sums each non-reversed receipt once by received_on. Cancelled parent PIs stay included unless filtered. Untracked issued PIs are counted and are not given an invented balance. This does not follow the active-PI date filter.';
 

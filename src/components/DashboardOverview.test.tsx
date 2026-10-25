@@ -198,6 +198,35 @@ describe("dashboard overview", () => {
     expect(unsetRow).toContain("view=awaiting");
   });
 
+  it("treats a zero-balance plan as nothing outstanding", () => {
+    const row = money({ planCount: 1, outstanding: "0.00", overdue: "0.00", received: "0.00" });
+    const panel = html(createElement(CollectionsPanel, {
+      currency: "USD",
+      row,
+      today: "2026-10-25",
+      parentStatus: "",
+      loading: false,
+      error: null,
+      onRetry: () => undefined,
+      controls: null,
+      parentControl: null,
+    }));
+    expect(panel).toContain("Nothing outstanding");
+    expect(panel).not.toContain("No active collections");
+    const cards = html(createElement(SummaryCards, {
+      currency: "USD",
+      report,
+      collection: row,
+      collectionFailed: false,
+      activeHref: "/dashboard?currency=USD#active-proforma-invoices",
+      outstandingHref: "/payments?view=outstanding&currency=USD",
+      overdueHref: "/payments?view=overdue&currency=USD",
+    }));
+    expect(cards).toContain("USD 0.00");
+    expect(cards).not.toContain("No payment plan in this currency");
+    expect(cards).not.toContain("No active collections");
+  });
+
   it("does not present a failed or loading collection as an empty plan", () => {
     const loading = html(createElement(CollectionsPanel, {
       currency: "USD",
