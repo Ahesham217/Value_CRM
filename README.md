@@ -125,15 +125,11 @@ Do not roll this frontend back after a new preset has been used to issue a PI if
 
 `supabase/tests/preset_numbering_concurrent.sh`, `supabase/tests/preset_identity_concurrent.sh`, and `supabase/tests/preset_duplicate_concurrent.sh` commit rows. Run them only on a disposable database, never on Value CRM.
 
-`20261023213000_owner_dashboard_payments.sql` is in the repository and has not been applied to Value CRM. Do not apply it as part of reviewing this change, and do not run it against Verifications or Value-Website. It is additive and read-only. It does not change draft save, numbering, snapshots, payment plans, receipts, or write permissions. The current frontend does not call the new functions, so applying the SQL before this frontend is safe. This frontend expects the functions. Until the SQL is applied, Dashboard and Payments show an error and the other pages keep working.
+`20261023213000_owner_dashboard_payments.sql` was applied to Value CRM on 25 October 2026. It was not applied to Verifications or Value-Website. Do not run the file again. The migration API recorded it as five parts, in order: `20261025072632 owner_dashboard_payments`, `20261025072806 owner_dashboard_payments_reports`, `20261025072825 owner_dashboard_payments_collections`, `20261025072846 owner_dashboard_payments_register`, and `20261025072902 owner_dashboard_payments_api`. Together they are the reviewed SQL. They add the read-only dashboard and payment-register functions and one index on open receipts. They do not change draft save, numbering, snapshots, payment plans, receipts, write permissions, counters, or bank details. The company-preset migration was already present and was not run again.
 
-Apply it to Value CRM only when this frontend is ready to be served:
+The production frontend that calls these functions is the merge of that reporting change. After the Cloudflare production build succeeds, reload the app. Dashboard and Payments are in the sidebar. Proforma invoices stay the page after sign-in. An old tab can still prepare PIs until it loads this build.
 
-1. Apply `20261023213000_owner_dashboard_payments.sql` in the SQL editor or with the CLI. Do not re-run the company-preset file or its four recorded parts.
-2. Serve this frontend and ask people to reload. The home page remains Proforma invoices. Dashboard and Payments are in the sidebar.
-3. An old tab can still prepare PIs. It will not show the new pages until it loads this build.
-
-Do not roll the frontend back in a way that removes these functions after staff are using the pages. Dropping the functions only removes the reports. It does not delete invoices, plans, or receipts. Issued snapshots are not rewritten.
+Do not drop these functions while this frontend is in use. Dropping them only removes the reports. It does not delete invoices, plans, or receipts. Issued snapshots are not rewritten.
 
 `20261018120300_egypt_logo.sql` stores the logo extracted from `reference-templates/Egypt Template.xlsx`. The UAE workbooks do not contain a logo. If Settings shows no Egypt logo, run that file once in the SQL editor.
 
