@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Banner, Button, Disclosure, Field, Select, TextArea, controlClass } from "./ui";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Banner, Button, Field, Select, TextArea, controlClass } from "./ui";
 import { formatMoney } from "../lib/format";
 import {
   advanceThenShipmentTemplate,
@@ -82,7 +82,11 @@ export function PaymentScheduleSection({
   onSchedule: (schedule: PaymentSchedule) => void;
 }) {
   const [scheduleEditorOpen, setScheduleEditorOpen] = useState(false);
-  const [sawScheduleBlock, setSawScheduleBlock] = useState(false);
+  const scheduleBlockingRef = useRef(false);
+  scheduleBlockingRef.current = false;
+  useEffect(() => {
+    if (scheduleBlockingRef.current) setScheduleEditorOpen(true);
+  });
   if (mode === "legacy") {
     return (
       <div>
@@ -167,12 +171,12 @@ export function PaymentScheduleSection({
     || Boolean(conversionMessage)
     || schedule.dates_need_review
     || (residualRequired && schedule.schema_version === 2);
-  if (scheduleBlocking && !sawScheduleBlock) {
-    setSawScheduleBlock(true);
-    setScheduleEditorOpen(true);
-  } else if (!scheduleBlocking && sawScheduleBlock) {
-    setSawScheduleBlock(false);
-  }
+  scheduleBlockingRef.current = scheduleBlocking;
+  const editorOpen = !schedule.no_payment_due && (scheduleBlocking || scheduleEditorOpen);
+  const showEditorToggle = !schedule.no_payment_due
+    && !scheduleBlocking
+    && canEdit
+    && (schedule.rows.length > 0 || !summaryText);
   const scheduleEditor = (
     <>
       {!schedule.no_payment_due && !oneTimeIsZero && !conversionMessage && schedule.rows.length === 0 && canEdit ? (
@@ -220,22 +224,15 @@ export function PaymentScheduleSection({
       ) : null}
     </>
   );
-  const scheduleFields = schedule.no_payment_due
-    ? null
-    : scheduleBlocking
-      ? scheduleEditor
-      : canEdit && (schedule.rows.length > 0 || !summaryText)
-        ? (
-          <Disclosure
-            quiet
-            title="Edit payment schedule"
-            open={scheduleEditorOpen}
-            onToggle={() => setScheduleEditorOpen((current) => !current)}
-          >
-            {scheduleEditor}
-          </Disclosure>
-        )
-        : null;
+  const scheduleFields = schedule.no_payment_due ? null : (
+    <PaymentScheduleEditorSlot
+      showToggle={showEditorToggle}
+      open={editorOpen}
+      onToggle={() => setScheduleEditorOpen((current) => !current)}
+    >
+      {scheduleEditor}
+    </PaymentScheduleEditorSlot>
+  );
 
   return (
     <div>
@@ -350,6 +347,38 @@ export function PaymentScheduleSection({
           Keep the legacy paragraph
         </button>
       ) : null}
+    </div>
+  );
+}
+
+/** Stable parent for the schedule fields. Validation must not move this slot. */
+function PaymentScheduleEditorSlot({
+  showToggle,
+  open,
+  onToggle,
+  children,
+}: {
+  showToggle: boolean;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="mt-3">
+      <div>
+        {showToggle ? (
+          <button
+            type="button"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-primary"
+            aria-expanded={open}
+            onClick={onToggle}
+          >
+            <span aria-hidden="true">{open ? "–" : "+"}</span>
+            Edit payment schedule
+          </button>
+        ) : null}
+      </div>
+      <div>{open ? children : null}</div>
     </div>
   );
 }

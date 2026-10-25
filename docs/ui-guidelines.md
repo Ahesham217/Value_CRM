@@ -57,6 +57,7 @@ A disclosure is presentation only.
 - A closed section still shows a short summary when it has a saved value.
 - `aria-expanded` is set on the control.
 - Do not hide an allocation error, a date-review warning, or an incomplete payment schedule behind a closed section.
+- The payment schedule fields stay in one editor slot while that editor is open. A valid or invalid result must not replace the inputs, move focus, or change row identity. Closing is available only when the schedule is not blocking, and it does not save or discard the rows.
 - The draft is saved only by Save draft or Generate PI. There is no autosave.
 
 ## Shell
