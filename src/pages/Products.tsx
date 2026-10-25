@@ -6,6 +6,7 @@ import { errorText } from "../lib/errors";
 import { formatMoney } from "../lib/format";
 import { can } from "../lib/permissions";
 import { PAGE_SIZE, sanitizeSearch } from "../lib/records";
+import { SEARCH_DEBOUNCE_MS, useDebouncedValue } from "../lib/useDebouncedValue";
 import { supabase } from "../lib/supabase";
 import type { Product } from "../lib/types";
 
@@ -15,6 +16,7 @@ export function ProductsPage() {
   const manage = can(profile, "can_manage_products");
   const seeCost = can(profile, "can_view_purchase_prices");
   const [query, setQuery] = useState("");
+  const debouncedQuery = useDebouncedValue(query, SEARCH_DEBOUNCE_MS);
   const [showArchived, setShowArchived] = useState(false);
   const [page, setPage] = useState(1);
   const [rows, setRows] = useState<Product[]>([]);
@@ -27,7 +29,7 @@ export function ProductsPage() {
     let active = true;
     setLoading(true);
     const from = (page - 1) * PAGE_SIZE;
-    const term = sanitizeSearch(query);
+    const term = sanitizeSearch(debouncedQuery);
     let request = supabase.from("products").select("*, vendors(company_name)", { count: "exact" }).order("model_code");
     if (term) request = request.or(`model_code.ilike.%${term}%,brand.ilike.%${term}%,description.ilike.%${term}%`);
     if (!showArchived) request = request.is("archived_at", null);
@@ -58,7 +60,7 @@ export function ProductsPage() {
     return () => {
       active = false;
     };
-  }, [page, query, seeCost, showArchived]);
+  }, [debouncedQuery, page, seeCost, showArchived]);
 
   return (
     <div>

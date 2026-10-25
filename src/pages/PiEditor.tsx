@@ -16,6 +16,7 @@ import { adjustScheduleForSubscriptionSelection, applySubscriptionConversion, co
 import { numericInputValue } from "../lib/numeric-input";
 import { can } from "../lib/permissions";
 import { editorLineFromStored, generationBlock, isBlankPlaceholder, isResolvedLine, linesForDraft, type EditorLine } from "../lib/pi-lines";
+import { EDITOR_PRESET_COLUMNS } from "../lib/pi-versions";
 import { layoutLabel, PRESET_IDENTITY_REVIEW, presetIdentityChanged, presetOptionLabel, subscriptionCurrencyMismatch } from "../lib/presets";
 import { supabase } from "../lib/supabase";
 import {
@@ -67,6 +68,7 @@ export function PiEditorPage() {
   const [previewing, setPreviewing] = useState(false);
   const acting = useRef(false);
   const captureBaseline = useRef(false);
+  const logosChecked = useRef(new Set<string>());
   const [baseline, setBaseline] = useState<string | null>(null);
   const [savedNotice, setSavedNotice] = useState(false);
   const [draftVersion, setDraftVersion] = useState(1);
@@ -145,15 +147,16 @@ export function PiEditorPage() {
     .slice()
     .sort((left, right) => left.display_name.localeCompare(right.display_name) || left.code.localeCompare(right.code));
 
-  async function load(piId: string) {
+  async function load(piId: string, isCurrent: () => boolean = () => true) {
     const [piResult, lineResult, salesResult, presetResult, sequenceResult, peopleResult] = await Promise.all([
       supabase.from("proforma_invoices").select("*").eq("id", piId).maybeSingle(),
       supabase.from("pi_lines").select("*").eq("pi_id", piId).order("position"),
       supabase.from("pi_salespeople").select("user_id").eq("pi_id", piId),
-      supabase.from("company_presets").select("*"),
+      supabase.from("company_presets").select(EDITOR_PRESET_COLUMNS),
       supabase.from("numbering_sequences").select("code, prefix, created_at"),
       supabase.from("profiles").select("*").eq("is_salesperson", true).order("full_name"),
     ]);
+    if (!isCurrent()) return;
     if (piResult.error) throw piResult.error;
     if (!piResult.data) throw new Error("This draft was not found, or you do not have access to it.");
     const pi = piResult.data as ProformaInvoice;
@@ -210,14 +213,23 @@ export function PiEditorPage() {
     setNotes(pi.additional_notes);
     const storedLines = (lineResult.data ?? []) as PiLine[];
     const productIds = [...new Set(storedLines.flatMap((line) => (line.product_id ? [line.product_id] : [])))];
+    const [productResult, clientResult, contactResult] = await Promise.all([
+      productIds.length > 0
+        ? supabase.from("products").select("*, vendors(company_name, archived_at)").in("id", productIds)
+        : Promise.resolve({ data: [], error: null }),
+      pi.client_id
+        ? supabase.from("clients").select("*").eq("id", pi.client_id).maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+      pi.client_id
+        ? supabase.from("client_contacts").select("*").eq("client_id", pi.client_id).order("position")
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+    if (!isCurrent()) return;
+    if (productResult.error) throw productResult.error;
     const linked = new Map<string, ReturnType<typeof toCatalogueProduct>>();
-    if (productIds.length > 0) {
-      const productResult = await supabase.from("products").select("*, vendors(company_name, archived_at)").in("id", productIds);
-      if (productResult.error) throw productResult.error;
-      for (const row of (productResult.data ?? []) as Product[]) {
-        const product = toCatalogueProduct(row);
-        linked.set(product.id, product);
-      }
+    for (const row of (productResult.data ?? []) as Product[]) {
+      const product = toCatalogueProduct(row);
+      linked.set(product.id, product);
     }
     setLines(storedLines.map((line) => {
       const product = line.product_id ? linked.get(line.product_id) : undefined;
@@ -234,28 +246,34 @@ export function PiEditorPage() {
     setPresets((presetResult.data ?? []) as CompanyPreset[]);
     setSequences((sequenceResult.data ?? []) as NumberingSequence[]);
     setSalespeople((peopleResult.data ?? []) as Profile[]);
-    if (pi.client_id) {
-      const clientResult = await supabase.from("clients").select("*").eq("id", pi.client_id).maybeSingle();
-      if (clientResult.data) {
-        const client = clientResult.data as Client;
-        setClientRecord(client);
-        setClientQuery(client.company_name);
-      }
-      const contactResult = await supabase.from("client_contacts").select("*").eq("client_id", pi.client_id).order("position");
-      setContacts((contactResult.data ?? []) as ClientContact[]);
+    if (clientResult.data) {
+      const client = clientResult.data as Client;
+      setClientRecord(client);
+      setClientQuery(client.company_name);
     } else {
       setClientRecord(null);
       setClientQuery("");
-      setContacts([]);
     }
+    setContacts((contactResult.data ?? []) as ClientContact[]);
     setReady(true);
     captureBaseline.current = true;
   }
 
+  const [reloadKey, setReloadKey] = useState(0);
   useEffect(() => {
     if (!id) return;
-    load(id).catch((caught) => setError(errorText(caught))).finally(() => setLoading(false));
-  }, [id]);
+    let active = true;
+    setLoading(true);
+    setError(null);
+    load(id, () => active).catch((caught) => {
+      if (active) setError(errorText(caught));
+    }).finally(() => {
+      if (active) setLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [id, reloadKey]);
 
   const commitmentProductIds = lines.flatMap((line) => (line.product ? [line.product.id] : [])).sort().join(",");
   useEffect(() => {
@@ -459,7 +477,7 @@ export function PiEditorPage() {
     return payload(prepared.lines);
   }
 
-  function previewSnapshot(): PiSnapshot {
+  function previewSnapshot(logo?: { logo_base64: string | null; logo_content_type: string | null }): PiSnapshot {
     const preset = presets.find((item) => item.code === presetCode);
     if (!preset || !currency) throw new Error("Choose an office and currency preset before previewing.");
     if (!totals.value) throw new Error(totals.error ?? "Correct the totals before previewing.");
@@ -490,8 +508,8 @@ export function PiEditorPage() {
         email: preset.email,
         website: preset.website,
         tax_registration: preset.tax_registration,
-        logo_base64: preset.logo_base64,
-        logo_content_type: preset.logo_content_type,
+        logo_base64: logo?.logo_base64 ?? preset.logo_base64,
+        logo_content_type: logo?.logo_content_type ?? preset.logo_content_type,
       },
       bank: {
         bank_name: preset.bank_name,
@@ -645,7 +663,19 @@ export function PiEditorPage() {
     setPreviewing(true);
     setError(null);
     try {
-      await previewDraftPdf(previewSnapshot());
+      const preset = presets.find((item) => item.code === presetCode) ?? null;
+      let logo: { logo_base64: string | null; logo_content_type: string | null } | undefined;
+      if (preset && preset.logo_base64 == null && !logosChecked.current.has(preset.code)) {
+        const logoResult = await supabase.from("company_presets").select("logo_base64, logo_content_type").eq("code", preset.code).maybeSingle();
+        if (logoResult.error) throw logoResult.error;
+        logo = {
+          logo_base64: (logoResult.data?.logo_base64 as string | null | undefined) ?? null,
+          logo_content_type: (logoResult.data?.logo_content_type as string | null | undefined) ?? preset.logo_content_type,
+        };
+        logosChecked.current.add(preset.code);
+        setPresets((current) => current.map((item) => (item.code === preset.code ? { ...item, ...logo } : item)));
+      }
+      await previewDraftPdf(previewSnapshot(logo));
     } catch (caught) {
       setMessage(null);
       setError(errorText(caught));
@@ -755,7 +785,14 @@ export function PiEditorPage() {
   ]);
 
   if (loading) return <p className="text-sm text-muted">Loading draft…</p>;
-  if (!ready) return <Banner tone="error">{error || "This draft could not be loaded."}</Banner>;
+  if (!ready) {
+    return (
+      <div className="space-y-3">
+        <Banner tone="error">{error || "This draft could not be loaded."}</Banner>
+        {error ? <Button type="button" onClick={() => setReloadKey((current) => current + 1)}>Retry</Button> : null}
+      </div>
+    );
+  }
   if (!draftOpen) {
     return (
       <div className="space-y-3">

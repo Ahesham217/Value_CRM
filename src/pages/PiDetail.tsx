@@ -7,6 +7,15 @@ import { Banner, Button, Disclosure, DocumentSurface, Field, LoadingNote, Menu, 
 import { downloadIssuedPdf } from "../lib/documents";
 import { errorText } from "../lib/errors";
 import { formatDate, formatMoney, formatQuantity, officeLabel } from "../lib/format";
+import {
+  PI_VERSION_SUMMARY_COLUMNS,
+  attachSnapshot,
+  emptyVersionSnapshot,
+  ensureVersionSnapshot,
+  fetchPiVersionSnapshot,
+  versionCurrency,
+  versionDisplayNumber,
+} from "../lib/pi-versions";
 import { previewPaymentSchedule, readPaymentSchedule } from "../lib/payment-schedule";
 import { can } from "../lib/permissions";
 import { supabase } from "../lib/supabase";
@@ -15,8 +24,8 @@ import { PAYMENT_TRACKING_ANCHOR } from "../lib/reporting";
 import { adjustmentRows, moneyLabel, taxExclusionNotes } from "../lib/workspace-view";
 
 function paymentDescription(pi: ProformaInvoice, latest: PiVersion | null): string {
-  if (latest?.snapshot.payment?.customer_text) return latest.snapshot.payment.customer_text;
-  if (latest?.snapshot.terms?.payment_terms) return latest.snapshot.terms.payment_terms;
+  if (latest?.snapshot?.payment?.customer_text) return latest.snapshot.payment.customer_text;
+  if (latest?.snapshot?.terms?.payment_terms) return latest.snapshot.terms.payment_terms;
   if (pi.payment_schedule) {
     try {
       const schedule = readPaymentSchedule(pi.payment_schedule);
@@ -57,28 +66,47 @@ export function PiDetailPage() {
   const [statusOpen, setStatusOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const downloadingRef = useRef<string | null>(null);
 
-  async function load(piId: string) {
-    const [piResult, listResult, lineResult, versionResult] = await Promise.all([
+  async function load(piId: string, isCurrent: () => boolean = () => true) {
+    const [piResult, listResult, lineResult, versionResult, latestSnapshotResult] = await Promise.all([
       supabase.from("proforma_invoices").select("*").eq("id", piId).maybeSingle(),
       supabase.from("pi_list").select("*").eq("id", piId).maybeSingle(),
       supabase.from("pi_lines").select("*").eq("pi_id", piId).order("position"),
-      supabase.from("pi_versions").select("*").eq("pi_id", piId).order("revision"),
+      supabase.from("pi_versions").select(PI_VERSION_SUMMARY_COLUMNS).eq("pi_id", piId).order("revision"),
+      supabase.from("pi_versions").select("id, snapshot").eq("pi_id", piId).order("revision", { ascending: false }).limit(1).maybeSingle(),
     ]);
+    if (!isCurrent()) return;
     if (piResult.error) throw piResult.error;
+    if (versionResult.error) throw versionResult.error;
+    if (latestSnapshotResult.error) throw latestSnapshotResult.error;
     if (!piResult.data) throw new Error("This PI was not found, or you do not have access to it.");
+    const summaries = ((versionResult.data ?? []) as Omit<PiVersion, "snapshot">[]).map(emptyVersionSnapshot);
+    const latestSnapshot = latestSnapshotResult.data
+      ? { id: latestSnapshotResult.data.id as string, snapshot: latestSnapshotResult.data.snapshot as PiVersion["snapshot"] }
+      : null;
     setPi(piResult.data as ProformaInvoice);
     setStatus((piResult.data as ProformaInvoice).tracking_status);
     setListRow((listResult.data ?? null) as PiListRow | null);
     setLines((lineResult.data ?? []) as PiLine[]);
-    setVersions((versionResult.data ?? []) as PiVersion[]);
+    setVersions(attachSnapshot(summaries, latestSnapshot?.snapshot ? { id: latestSnapshot.id, snapshot: latestSnapshot.snapshot } : null));
   }
 
   useEffect(() => {
     if (!id) return;
-    load(id).catch((caught) => setError(errorText(caught))).finally(() => setLoading(false));
-  }, [id]);
+    let active = true;
+    setLoading(true);
+    setError(null);
+    load(id, () => active).catch((caught) => {
+      if (active) setError(errorText(caught));
+    }).finally(() => {
+      if (active) setLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [id, reloadKey]);
 
   useEffect(() => {
     if (loading || location.hash !== `#${PAYMENT_TRACKING_ANCHOR}`) return;
@@ -115,7 +143,9 @@ export function PiDetailPage() {
     setDownloadingId(version.id);
     setError(null);
     try {
-      await downloadIssuedPdf(version.snapshot);
+      const snapshot = await ensureVersionSnapshot(version, fetchPiVersionSnapshot);
+      setVersions((current) => current.map((item) => (item.id === version.id ? { ...item, snapshot } : item)));
+      await downloadIssuedPdf(snapshot);
     } catch (caught) {
       const number = version.snapshot?.display_number || version.pi_number;
       setError(`The PDF for ${number} could not be created. ${errorText(caught)} Choose Download to try again. This does not change the issued version.`);
@@ -138,14 +168,21 @@ export function PiDetailPage() {
   ]);
 
   if (loading) return <LoadingNote>Loading PI…</LoadingNote>;
-  if (!pi) return <Banner tone="error">{error || "PI not found."}</Banner>;
+  if (!pi) {
+    return (
+      <div className="space-y-3">
+        <Banner tone="error">{error || "PI not found."}</Banner>
+        {error ? <Button type="button" onClick={() => setReloadKey((current) => current + 1)}>Retry</Button> : null}
+      </div>
+    );
+  }
 
   const canEdit = can(profile, "can_edit_drafts");
   const canGenerate = can(profile, "can_generate_pis");
   const latest = versions.at(-1) ?? null;
   const orderedVersions = [...versions].reverse();
-  const currency = latest?.snapshot.currency ?? pi.currency;
-  const issuedAdjustments = latest?.snapshot.adjustments;
+  const currency = versionCurrency(latest ?? { snapshot: null }, pi.currency) ?? pi.currency;
+  const issuedAdjustments = latest?.snapshot?.adjustments;
   const totalRows = issuedAdjustments
     ? adjustmentRows({
         currency,
@@ -208,7 +245,7 @@ export function PiDetailPage() {
   ];
   const historySummary = versions.length === 0
     ? "Nothing issued yet"
-    : `${versions.length === 1 ? "1 version" : `${versions.length} versions`} · current ${latest?.snapshot.display_number ?? ""}`;
+    : `${versions.length === 1 ? "1 version" : `${versions.length} versions`} · current ${latest ? versionDisplayNumber(latest) : ""}`;
 
   return (
     <div className={`${formSheetClass} space-y-6`}>
@@ -259,13 +296,13 @@ export function PiDetailPage() {
           <div><dt className="text-[13px] text-muted">Valid until</dt><dd className="mt-0.5">{formatDate(pi.expiry_date)}</dd></div>
           <div><dt className="text-[13px] text-muted">Office</dt><dd className="mt-0.5">{listRow?.preset_display_name || officeLabel(listRow?.office ?? pi.office)}</dd></div>
           <div><dt className="text-[13px] text-muted">Amount</dt><dd className="mt-0.5 font-medium tabular-nums">{formatMoney(grandTotal, currency)}</dd></div>
-          <div><dt className="text-[13px] text-muted">Lead salesperson</dt><dd className="mt-0.5">{listRow?.lead_name || latest?.snapshot.sales.lead_name || "—"}</dd></div>
+          <div><dt className="text-[13px] text-muted">Lead salesperson</dt><dd className="mt-0.5">{listRow?.lead_name || latest?.snapshot?.sales.lead_name || "—"}</dd></div>
           <div>
             <dt className="text-[13px] text-muted">Prepared by</dt>
-            <dd className="mt-0.5">{latest?.snapshot.sales.prepared_by || listRow?.prepared_by_name || "Not recorded yet"}</dd>
+            <dd className="mt-0.5">{latest?.snapshot?.sales.prepared_by || listRow?.prepared_by_name || "Not recorded yet"}</dd>
           </div>
           <div className="sm:col-span-2 lg:col-span-3">
-            <dt className="text-[13px] text-muted">{latest?.snapshot.payment ? "Payment schedule" : pi.payment_schedule ? "Payment schedule" : "Legacy payment terms"}</dt>
+            <dt className="text-[13px] text-muted">{latest?.snapshot?.payment ? "Payment schedule" : pi.payment_schedule ? "Payment schedule" : "Legacy payment terms"}</dt>
             <dd className="mt-1 whitespace-pre-wrap">{paymentDescription(pi, latest)}</dd>
             {pi.draft_open && versions.length > 0 ? <p className="mt-1 text-[13px] text-muted">The open revision is edited separately. This is the latest issued agreement.</p> : null}
           </div>
@@ -321,6 +358,7 @@ export function PiDetailPage() {
       <PaymentTrackingSection
         piId={pi.id}
         versions={versions}
+        currency={pi.currency}
         canManage={can(profile, "can_manage_payments")}
         canReverse={can(profile, "can_reverse_payments")}
         canWaive={can(profile, "can_activate_zero_subscriptions")}
@@ -333,11 +371,11 @@ export function PiDetailPage() {
                 <li key={version.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
                   <div>
                     <p className="font-medium text-ink">
-                      {version.snapshot.display_number}
+                      {versionDisplayNumber(version)}
                       {version.id === latest?.id ? <span className="ml-2 text-xs font-medium text-navy-800">Current</span> : null}
                     </p>
                     <p className="text-xs text-muted">
-                      {formatDate(version.generated_at)} · {version.snapshot.sales?.prepared_by || "—"} · {formatMoney(version.grand_total, version.snapshot.currency)}
+                      {formatDate(version.generated_at)} · {version.snapshot?.sales?.prepared_by || "—"} · {formatMoney(version.grand_total, versionCurrency(version, currency))}
                     </p>
                   </div>
                   <Button type="button" variant="secondary" onClick={() => void downloadVersion(version)} disabled={downloadingId !== null}>

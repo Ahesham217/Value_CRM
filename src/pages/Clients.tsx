@@ -5,6 +5,7 @@ import { EmptyState, PageHeader, Pagination, buttonClass, controlClass, tdClass,
 import { errorText } from "../lib/errors";
 import { can } from "../lib/permissions";
 import { PAGE_SIZE, sanitizeSearch } from "../lib/records";
+import { SEARCH_DEBOUNCE_MS, useDebouncedValue } from "../lib/useDebouncedValue";
 import { supabase } from "../lib/supabase";
 import type { Client } from "../lib/types";
 
@@ -12,6 +13,7 @@ export function ClientsPage() {
   const { profile } = useAuth();
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
+  const debouncedQuery = useDebouncedValue(query, SEARCH_DEBOUNCE_MS);
   const [showArchived, setShowArchived] = useState(false);
   const [page, setPage] = useState(1);
   const [rows, setRows] = useState<Client[]>([]);
@@ -25,7 +27,7 @@ export function ClientsPage() {
     setLoading(true);
     const from = (page - 1) * PAGE_SIZE;
     let request = supabase.from("clients").select("*", { count: "exact" }).order("company_name");
-    const term = sanitizeSearch(query);
+    const term = sanitizeSearch(debouncedQuery);
     if (term) request = request.ilike("company_name", `%${term}%`);
     if (!showArchived) request = request.is("archived_at", null);
     request.range(from, from + PAGE_SIZE - 1).then(({ data, error: queryError, count: total }) => {
@@ -41,7 +43,7 @@ export function ClientsPage() {
     return () => {
       active = false;
     };
-  }, [page, query, showArchived]);
+  }, [debouncedQuery, page, showArchived]);
 
   return (
     <div>

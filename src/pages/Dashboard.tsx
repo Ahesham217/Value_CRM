@@ -41,6 +41,7 @@ import {
   type ReceiptPeriod,
 } from "../lib/reporting";
 import { supabase } from "../lib/supabase";
+import { SEARCH_DEBOUNCE_MS, useDebouncedValue } from "../lib/useDebouncedValue";
 
 type ActiveFilters = {
   period: PiPeriod;
@@ -89,6 +90,7 @@ export function DashboardPage() {
   const [untrackedLoading, setUntrackedLoading] = useState(false);
   const [untrackedPage, setUntrackedPage] = useState(1);
 
+  const debouncedSearch = useDebouncedValue(filters.search, SEARCH_DEBOUNCE_MS);
   const dateMessage = filters.period === "custom" ? customRangeMessage(filters.from, filters.to) : null;
   const receiptMessage = receiptPeriod === "custom" ? customRangeMessage(receiptFrom, receiptTo) : null;
 
@@ -117,7 +119,7 @@ export function DashboardPage() {
       p_preset: filters.preset || null,
       p_currency: filters.currency || null,
       p_lead: filters.lead || null,
-      p_search: sanitizeSearch(filters.search) || null,
+      p_search: sanitizeSearch(debouncedSearch) || null,
       p_limit: PAGE_SIZE,
       p_offset: (filters.page - 1) * PAGE_SIZE,
       p_set: "active",
@@ -142,7 +144,7 @@ export function DashboardPage() {
     return () => {
       active = false;
     };
-  }, [dateMessage, filters]);
+  }, [dateMessage, debouncedSearch, filters.currency, filters.from, filters.lead, filters.page, filters.period, filters.preset, filters.status, filters.to]);
 
   useEffect(() => {
     if (receiptMessage) {

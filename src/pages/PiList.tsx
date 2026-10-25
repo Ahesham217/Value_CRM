@@ -7,6 +7,7 @@ import { displayNumber, formatDate, formatMoney } from "../lib/format";
 import { can } from "../lib/permissions";
 import { presetFilterOptions } from "../lib/presets";
 import { PAGE_SIZE, sanitizeSearch } from "../lib/records";
+import { SEARCH_DEBOUNCE_MS, useDebouncedValue } from "../lib/useDebouncedValue";
 import { supabase } from "../lib/supabase";
 import type { PiListRow, Profile } from "../lib/types";
 import { piListFilterChips } from "../lib/workspace-view";
@@ -17,6 +18,7 @@ export function PiListPage() {
   const canEdit = can(profile, "can_edit_drafts");
   const filtersId = useId();
   const [query, setQuery] = useState("");
+  const debouncedQuery = useDebouncedValue(query, SEARCH_DEBOUNCE_MS);
   const [office, setOffice] = useState("");
   const [currency, setCurrency] = useState("");
   const [status, setStatus] = useState("");
@@ -52,7 +54,7 @@ export function PiListPage() {
     setLoading(true);
     const from = (page - 1) * PAGE_SIZE;
     let request = supabase.from("pi_list").select("*", { count: "exact" }).order("created_at", { ascending: false });
-    const term = sanitizeSearch(query);
+    const term = sanitizeSearch(debouncedQuery);
     if (term) request = request.or(`pi_number.ilike.%${term}%,client_name.ilike.%${term}%`);
     if (office) request = request.eq("preset_code", office);
     if (currency) request = request.eq("currency", currency);
@@ -73,7 +75,7 @@ export function PiListPage() {
     return () => {
       active = false;
     };
-  }, [currency, fromDate, office, page, query, salesperson, status, toDate]);
+  }, [currency, debouncedQuery, fromDate, office, page, salesperson, status, toDate]);
 
   async function createDraft() {
     setCreating(true);

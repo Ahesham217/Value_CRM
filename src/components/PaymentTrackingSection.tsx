@@ -16,6 +16,7 @@ import {
 import { supabase } from "../lib/supabase";
 import type { PiVersion } from "../lib/types";
 import { PAYMENT_TRACKING_ANCHOR } from "../lib/reporting";
+import { fetchPiVersionSnapshot, versionAgreedTotal, versionCurrency, versionDisplayNumber } from "../lib/pi-versions";
 import { Banner, Button, Field, LoadingNote, Select, TextArea, controlClass, tableWrapClass, tdClass, thClass, theadClass } from "./ui";
 
 type PlanRow = {
@@ -76,10 +77,11 @@ type SubscriptionRow = {
 };
 
 function versionAmount(version: PiVersion): string {
-  return version.snapshot.payment?.grand_total ?? version.snapshot.adjustments.grand_total;
+  return versionAgreedTotal(version);
 }
 
-function versionIsStructured(version: PiVersion): boolean {
+function versionIsStructured(version: PiVersion): boolean | null {
+  if (!version.snapshot) return null;
   const schema = version.snapshot.payment?.schema_version;
   return schema === 1 || schema === 2;
 }
@@ -87,12 +89,14 @@ function versionIsStructured(version: PiVersion): boolean {
 export function PaymentTrackingSection({
   piId,
   versions,
+  currency: currencyFallback = null,
   canManage,
   canReverse,
   canWaive,
 }: {
   piId: string;
   versions: PiVersion[];
+  currency?: string | null;
   canManage: boolean;
   canReverse: boolean;
   canWaive: boolean;
@@ -124,10 +128,36 @@ export function PaymentTrackingSection({
   const [waiveId, setWaiveId] = useState<string | null>(null);
   const [waiveDate, setWaiveDate] = useState("");
   const [waiveReason, setWaiveReason] = useState("");
+  const [loadedSnapshots, setLoadedSnapshots] = useState<Record<string, PiVersion["snapshot"]>>({});
 
+  const withSnapshot = (version: PiVersion): PiVersion => (
+    version.snapshot || !loadedSnapshots[version.id]
+      ? version
+      : { ...version, snapshot: loadedSnapshots[version.id] ?? null }
+  );
   const latest = [...versions].sort((left, right) => right.revision - left.revision)[0] ?? null;
   const selected = versions.find((version) => version.id === versionId) ?? null;
+  const selectedView = selected ? withSnapshot(selected) : null;
   const tracked = versions.find((version) => version.id === plan?.source_version_id) ?? null;
+  const trackedView = tracked ? withSnapshot(tracked) : null;
+
+  useEffect(() => {
+    const missing = [selected, tracked].filter((version): version is PiVersion => Boolean(version && !version.snapshot && !loadedSnapshots[version.id]));
+    if (missing.length === 0) return;
+    let active = true;
+    Promise.all(missing.map(async (version) => {
+      const snapshot = await fetchPiVersionSnapshot(version.id);
+      return [version.id, snapshot] as const;
+    })).then((rows) => {
+      if (!active) return;
+      setLoadedSnapshots((current) => ({ ...current, ...Object.fromEntries(rows) }));
+    }).catch((caught) => {
+      if (active) setError(errorText(caught));
+    });
+    return () => {
+      active = false;
+    };
+  }, [loadedSnapshots, selected, tracked]);
 
   async function load() {
     const planResult = await supabase.from("payment_plans").select("*").eq("pi_id", piId).maybeSingle();
@@ -198,7 +228,7 @@ export function PaymentTrackingSection({
     setAcceptActivation(false);
   }, [amount, plan?.id, suggestion.map((item) => `${item.obligationId}:${item.amount}`).join("|")]);
 
-  const currency = plan?.currency ?? selected?.snapshot.currency ?? null;
+  const currency = plan?.currency ?? (selectedView ? versionCurrency(selectedView, currencyFallback) : currencyFallback) ?? null;
   const received = receipts.filter((receipt) => !receipt.reversed_at).reduce((sum, receipt) => sum + Number(receipt.amount), 0);
   const agreed = plan ? Number(plan.agreed_total) : 0;
   const outstanding = Math.round((agreed - received) * 100) / 100;
@@ -367,22 +397,28 @@ export function PaymentTrackingSection({
           <p className="text-sm text-secondary">Choose the issued version the customer agreed. Starting tracking does not mark the PI accepted, and a later revision will not move this plan.</p>
           <Field label="Issued version">
             <Select value={versionId} onChange={(event) => { setVersionId(event.target.value); setConfirmed(false); }}>
-              {versions.map((version) => (
-                <option key={version.id} value={version.id}>
-                  {version.snapshot.display_number} · {formatMoney(versionAmount(version), version.snapshot.currency)}
-                </option>
-              ))}
+              {versions.map((version) => {
+                const view = withSnapshot(version);
+                return (
+                  <option key={version.id} value={version.id}>
+                    {versionDisplayNumber(view)} · {formatMoney(versionAmount(view), versionCurrency(view, currency))}
+                  </option>
+                );
+              })}
             </Select>
           </Field>
-          {selected && !versionIsStructured(selected) ? (
+          {selectedView && versionIsStructured(selectedView) === null ? (
+            <p className="text-sm text-muted">Loading this version’s saved agreement…</p>
+          ) : null}
+          {selectedView && versionIsStructured(selectedView) === false ? (
             <Banner tone="info">This version uses a payment paragraph. Automatic payment allocation is not available, and the paragraph is not parsed. Download still uses the saved document.</Banner>
-          ) : selected ? (
+          ) : selectedView && versionIsStructured(selectedView) === true ? (
             <p className="text-sm text-ink">
-              {selected.snapshot.display_number} · {formatMoney(versionAmount(selected), selected.snapshot.currency)}
-              {selected.snapshot.payment?.schema_version === 2 ? " · Subscription charges are separate from one-time payments." : " · This schedule applies to the whole PI."}
+              {versionDisplayNumber(selectedView)} · {formatMoney(versionAmount(selectedView), versionCurrency(selectedView, currency))}
+              {selectedView.snapshot?.payment?.schema_version === 2 ? " · Subscription charges are separate from one-time payments." : " · This schedule applies to the whole PI."}
             </p>
           ) : null}
-          {canManage && selected && versionIsStructured(selected) ? (
+          {canManage && selectedView && versionIsStructured(selectedView) === true ? (
             <div className="space-y-3">
               <label className="flex items-start gap-2 text-sm">
                 <input className="mt-0.5" type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />
@@ -392,15 +428,15 @@ export function PaymentTrackingSection({
                 {starting ? "Starting…" : "Start payment tracking"}
               </Button>
             </div>
-          ) : (
+          ) : !selectedView || versionIsStructured(selectedView) === null ? null : (
             <p className="text-sm text-muted">You can view this PI. Recording payments needs permission to manage payment tracking.</p>
           )}
         </div>
       ) : (
         <div className="mt-4 space-y-4">
-          {tracked && latest && tracked.id !== latest.id ? (
+          {trackedView && latest && trackedView.id !== latest.id ? (
             <Banner tone="warning">
-              Payment tracking follows {tracked.snapshot.display_number} ({formatMoney(plan.agreed_total, currency)}). The latest issued version is {latest.snapshot.display_number}. Tracking stays on the agreed version, and receipts are not moved.
+              Payment tracking follows {versionDisplayNumber(trackedView)} ({formatMoney(plan.agreed_total, currency)}). The latest issued version is {versionDisplayNumber(withSnapshot(latest))}. Tracking stays on the agreed version, and receipts are not moved.
             </Banner>
           ) : null}
           <dl className="grid gap-3 text-sm sm:grid-cols-3">

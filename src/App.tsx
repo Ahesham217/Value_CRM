@@ -1,6 +1,8 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./auth/AuthProvider";
+import { ACCOUNT_CHECK_FAILED_MESSAGE } from "./auth/session-guard";
 import { Shell } from "./components/Shell";
+import { Banner, Button } from "./components/ui";
 import { HOME_PATH } from "./lib/navigation";
 import { ClientDetailPage } from "./pages/ClientDetail";
 import { ClientsPage } from "./pages/Clients";
@@ -19,12 +21,20 @@ import { SubscriptionsPage } from "./pages/Subscriptions";
 import { VendorDetailPage } from "./pages/VendorDetail";
 import { VendorsPage } from "./pages/Vendors";
 
-function RequireAuth() {
-  const { session, profile, loading } = useAuth();
+export function RequireAuth() {
+  const { session, profile, loading, accountCheckError, retryAccountCheck } = useAuth();
   if (loading) {
     return <p className="bg-canvas p-8 text-sm text-muted">Loading…</p>;
   }
-  if (!session || !profile) return <Navigate to="/login" replace />;
+  if (!session && !accountCheckError) return <Navigate to="/login" replace />;
+  if (!session || !profile) {
+    return (
+      <div className="bg-canvas p-8">
+        <Banner tone="error">{accountCheckError ?? ACCOUNT_CHECK_FAILED_MESSAGE}</Banner>
+        <Button className="mt-3" type="button" onClick={() => void retryAccountCheck()}>Retry</Button>
+      </div>
+    );
+  }
   return <Shell />;
 }
 
