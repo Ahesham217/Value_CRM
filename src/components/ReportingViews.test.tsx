@@ -60,6 +60,8 @@ const report: ActiveReport = {
   ],
   rows: [issued, draft],
   leads: [],
+  statusCounts: { draft: 1, issued: 1, sent: 0, accepted: 0 },
+  currencies: ["EGP", "USD"],
 };
 
 const summary: CollectionSummary = {
@@ -67,9 +69,9 @@ const summary: CollectionSummary = {
   parentStatus: "cancelled",
   receiptPeriod: { unbounded: false, start: "2026-10-18", end: "2026-10-24" },
   currencies: [
-    { currency: "EGP", outstanding: "80.00", overdue: "80.00", dueToday: "0.00", next7: "0.00", next30: "0.00", unresolved: "0.00", received: "30.00" },
-    { currency: "USD", outstanding: "0.00", overdue: "0.00", dueToday: "0.00", next7: "0.00", next30: "0.00", unresolved: "0.00", received: "0.00" },
-    { currency: "EUR", outstanding: "25.00", overdue: "0.00", dueToday: "0.00", next7: "25.00", next30: "25.00", unresolved: "15.00", received: "0.00" },
+    { currency: "EGP", outstanding: "80.00", overdue: "80.00", dueToday: "0.00", next7: "0.00", next30: "0.00", unresolved: "0.00", due1To7: "0.00", due8To30: "0.00", dueAfter30: "0.00", planCount: 1, received: "30.00" },
+    { currency: "USD", outstanding: "0.00", overdue: "0.00", dueToday: "0.00", next7: "0.00", next30: "0.00", unresolved: "0.00", due1To7: "0.00", due8To30: "0.00", dueAfter30: "0.00", planCount: 0, received: "0.00" },
+    { currency: "EUR", outstanding: "25.00", overdue: "0.00", dueToday: "0.00", next7: "25.00", next30: "25.00", unresolved: "15.00", due1To7: "25.00", due8To30: "0.00", dueAfter30: "0.00", planCount: 2, received: "0.00" },
   ],
   untrackedCount: 3,
 };
@@ -150,7 +152,7 @@ describe("dashboard and payments views", () => {
   it("links collection windows without adding the 7-day amount to the 30-day amount", () => {
     const markup = html(createElement("div", null, createElement("p", null, collectionCopy()), createElement(CollectionSummaryTable, { summary }), createElement(CoverageNote, { count: summary.untrackedCount })));
     expect(markup).toContain("sit inside the next 30 days");
-    expect(markup).toContain("does not mean every invoice has been paid");
+    expect(markup).toContain("does not mean every offer has been paid");
     expect(markup).toContain('href="/payments?view=overdue&amp;currency=EGP&amp;pi_status=cancelled"');
     expect(markup).toContain('href="/payments?view=awaiting&amp;balance=outstanding&amp;currency=EUR&amp;pi_status=cancelled"');
     expect(markup).toContain('href="/payments?view=next_7&amp;currency=EUR&amp;pi_status=cancelled"');

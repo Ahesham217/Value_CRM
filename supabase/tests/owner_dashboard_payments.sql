@@ -1,5 +1,6 @@
 -- Rolled-back checks for the owner dashboard and the shared Payments register.
--- Run with a privileged session after 20261023213000_owner_dashboard_payments.sql.
+-- Run with a privileged session after 20261023213000_owner_dashboard_payments.sql
+-- and 20261025143000_dashboard_overview_aggregates.sql.
 -- The block always raises, including on success, so none of its rows are committed.
 -- Do not run this against Value CRM if the session cannot roll the final exception back.
 
@@ -430,6 +431,24 @@ begin
   then
     v_fail := v_fail || 'next 7 was added on top of next 30; ';
   end if;
+  if v_summary #>> '{currencies,2,due_1_7}' is distinct from '25.00'
+    or v_summary #>> '{currencies,2,due_8_30}' is distinct from '15.00'
+    or v_summary #>> '{currencies,2,due_after_30}' is distinct from '7.00'
+    or v_summary #>> '{currencies,2,due_1_7}' is distinct from v_summary #>> '{currencies,2,next_7}'
+    or (v_summary #>> '{currencies,2,plan_count}')::integer is distinct from 8
+    or (v_summary #>> '{currencies,0,plan_count}')::integer is distinct from 0
+    or (v_summary #>> '{currencies,1,plan_count}')::integer is distinct from 0
+    or (
+      (v_summary #>> '{currencies,2,overdue}')::numeric
+      + (v_summary #>> '{currencies,2,due_today}')::numeric
+      + (v_summary #>> '{currencies,2,due_1_7}')::numeric
+      + (v_summary #>> '{currencies,2,due_8_30}')::numeric
+      + (v_summary #>> '{currencies,2,due_after_30}')::numeric
+      + (v_summary #>> '{currencies,2,unresolved}')::numeric
+    ) is distinct from (v_summary #>> '{currencies,2,outstanding}')::numeric
+  then
+    v_fail := v_fail || 'disjoint due buckets ' || v_summary::text || '; ';
+  end if;
 
   v_register := public.payment_register('awaiting', null, 'EUR', null, null, null, null, null, null, null, 20, 0);
   if (v_register ->> 'count')::integer is distinct from 2 then
@@ -473,6 +492,8 @@ begin
   v_again := public.payment_register('paid', null, 'EUR', null, null, null, null, null, null, null, 20, 0);
   if v_summary #>> '{currencies,2,overdue}' is distinct from '0.00'
     or v_summary #>> '{currencies,2,outstanding}' is distinct from '192.00'
+    or v_summary #>> '{currencies,2,due_1_7}' is distinct from '25.00'
+    or (v_summary #>> '{currencies,2,plan_count}')::integer is distinct from 8
     or v_summary #>> '{currencies,2,received}' is distinct from '0.00'
     or (v_register ->> 'count')::integer is distinct from 0
     or (v_again ->> 'count')::integer is distinct from 1
@@ -772,6 +793,24 @@ begin
   if v_text is distinct from private.payment_plain_amount(v_amount) then
     v_fail := v_fail || 'EGP draft total ' || coalesce(v_text, '') || '; ';
   end if;
+  v_again := public.active_pi_report('all', null, null, null, null, 'EGP', null, null, 1, 0, 'active');
+  if v_report -> 'status_counts' is null
+    or v_again -> 'status_counts' is distinct from v_report -> 'status_counts'
+    or (v_again ->> 'count')::integer is distinct from (v_report ->> 'count')::integer
+    or (v_report #>> '{status_counts,draft}')::integer is distinct from (select count(*) from expected_pi where currency = 'EGP' and kind = 'draft')
+    or (v_report #>> '{status_counts,issued}')::integer is distinct from (select count(*) from expected_pi where currency = 'EGP' and kind = 'issued')
+    or (v_report #>> '{status_counts,sent}')::integer is distinct from 0
+    or (v_report #>> '{status_counts,accepted}')::integer is distinct from 0
+    or (
+      (v_report #>> '{status_counts,draft}')::integer
+      + (v_report #>> '{status_counts,issued}')::integer
+      + (v_report #>> '{status_counts,sent}')::integer
+      + (v_report #>> '{status_counts,accepted}')::integer
+    ) is distinct from (v_report ->> 'count')::integer
+    or v_report::text like '%' || v_cancelled::text || '%'
+  then
+    v_fail := v_fail || 'status counts followed the page or dropped a PI ' || coalesce((v_report -> 'status_counts')::text, '') || '; ';
+  end if;
   select item into v_row from jsonb_array_elements(v_report -> 'rows') item where (item ->> 'id')::uuid = v_issued;
   if v_row ->> 'total' is distinct from '1000.00'
     or v_row ->> 'amount_kind' is distinct from 'issued'
@@ -939,6 +978,11 @@ begin
     or v_register::text like '%Report Secret ' || v_tag || '%'
     or v_summary #>> '{currencies,0,outstanding}' is distinct from '0.00'
     or v_summary #>> '{currencies,2,outstanding}' is distinct from '0.00'
+    or (v_summary #>> '{currencies,0,plan_count}')::integer is distinct from 0
+    or (v_summary #>> '{currencies,1,plan_count}')::integer is distinct from 0
+    or (v_summary #>> '{currencies,2,plan_count}')::integer is distinct from 0
+    or (v_report #>> '{status_counts,issued}')::integer is distinct from 1
+    or (v_report #>> '{status_counts,draft}')::integer is distinct from 0
     or (v_summary ->> 'untracked_count')::integer is distinct from 1
   then
     v_fail := v_fail || 'associated user saw another PI ' || coalesce(v_report ->> 'count', '') || '; ';
@@ -952,6 +996,9 @@ begin
   if (v_report ->> 'count')::integer is distinct from 0
     or (v_register ->> 'count')::integer is distinct from 0
     or (v_summary ->> 'untracked_count')::integer is distinct from 0
+    or (v_summary #>> '{currencies,0,plan_count}')::integer is distinct from 0
+    or (v_summary #>> '{currencies,2,plan_count}')::integer is distinct from 0
+    or (v_report #>> '{status_counts,issued}')::integer is distinct from 0
     or v_summary #>> '{currencies,0,outstanding}' is distinct from '0.00'
     or v_report::text like '%Report Secret%'
     or v_report::text like '%Report Mine%'

@@ -311,7 +311,7 @@ Value CRM already has `proforma_invoices.payment_schedule`, the payment function
 
 - Decision date: 2026-10-25
 - Documented: 2026-10-25
-- Status: Implemented in this frontend. Not deployed. No migration was added or applied.
+- Status: Implemented in this frontend. Not deployed. No migration was added or applied. The dashboard layout described here is superseded by [DEC-024](#dec-024). The rest of this presentation remains.
 - Decision: Use one calm workspace presentation for the existing V1 screens. Share colours, type, controls, tables, and the signed-in shell. Do not add business features to make the screens match a reference layout.
 - Reason: Staff were moving between screens that did not share spacing, colour, or action weight. The references showed a readable internal tool. The written business rules stay ahead of any illustrative numbers or labels in those references.
 - Consequences or limitations:
@@ -343,3 +343,22 @@ Value CRM already has `proforma_invoices.payment_schedule`, the payment function
   - The PI editor loads preset rows without the logo file. Preview loads that preset’s logo when it needs it. Product, client, and contact reads for a draft run together instead of one after another.
   - No persistent cache of business data was added. No database migration was added. PDF rendering is still loaded only when a preview or download runs.
 - References: `src/auth/AuthProvider.tsx`, `src/auth/session-guard.ts`, `src/App.tsx`, `src/lib/pi-versions.ts`, `src/lib/useDebouncedValue.ts`, `src/pages/Payments.tsx`, `src/pages/PiDetail.tsx`, `src/pages/PiEditor.tsx`, `README.md`
+
+## DEC-024
+
+- Decision date: 2026-10-25
+- Documented: 2026-10-25
+- Status: Implemented in this frontend. Not deployed. `supabase/migrations/20261025143000_dashboard_overview_aggregates.sql` is added and has not been applied to Value CRM. Do not apply it to Verifications or Value-Website. Do not re-run older migrations.
+- Decision: Show the dashboard as one currency at a time, with summary cards, a status chart, and disjoint collection buckets above the active PI table. Do not treat an offer that has no payment plan as a missing-tracking task.
+- Reason: The owner needs the active-offer picture and the tracked-collection picture to be readable without combining currencies or burying collections under the PI table. A proforma invoice is an offer. Issuing or sending it does not mean the customer has accepted it or owes payment.
+- Consequences or limitations:
+  - Proforma invoices stay the page after sign-in. The sidebar, drawer, Settings permission, and sign-out behaviour are unchanged. Dashboard and Payments stay read-only.
+  - The dashboard currency is USD, EGP, or EUR. Amounts are never added across currencies and are never converted. The choice is stored in the address. If the address has no currency, the screen chooses the first of USD, EGP, and EUR that has a visible active PI in the selected PI period. If none do, it chooses the first of those currencies that has a visible payment plan. Otherwise it chooses USD. That choice is written into the address and is not changed when a later refresh shows activity in another currency.
+  - The selected currency filters the active PI count, quoted totals, status chart, and table. It also selects which collection amounts are shown. The PI period, status, office, lead, and search still filter that active PI population. The PI period does not filter collection balances. The received period filters received receipts only. A separate PI status control on collections can still limit tracked balances, including cancelled parents.
+  - Active PI counts and the status chart use the full filtered population, not the current table page. Each PI is counted once. The issued quoted total is the latest issued revision. An open revision draft does not replace it or get added to it. Draft quoted value is separate. Cancelled PIs stay out of the active population.
+  - Collection cards and the collection chart use only payment plans that already exist. No plan is created by issuing, sending, accepting, editing payment terms, or generating a PDF. When the selected currency has no visible plan, the collections panel says “No active collections” and does not ask staff to start tracking. A zero balance with a visible plan is settled, not the same state. Outstanding, overdue, and the chart use remaining balances. Paid obligations are not overdue. A date that is not set is not overdue.
+  - The chart buckets are mutually exclusive: overdue before today, due today, due in 1–7 days, due in 8–30 days, due after 30 days, and date not set. Due in 1–7 days is the existing next-7 window. Due in 8–30 days and due after 30 days are new totals on the same summary. The existing next-7 and next-30 views remain available and still overlap. New buckets link to a payment view that expresses the same dates. Received stays a receipt total by `received_on`, excludes reversed receipts, is described as not revenue, and does not open the obligation list.
+  - The report functions gain `status_counts`, `due_1_7`, `due_8_30`, `due_after_30`, and `plan_count`. Existing fields and callers stay. Counts use the same active-profile and `can_read_pi` rules. The migration adds no tables, so the existing `ensure_rls` trigger is unchanged. It does not read purchase prices or rewrite snapshots, plans, receipts, allocations, subscriptions, or counters. Anonymous execution stays revoked. A failed report is an error with Retry, not a displayed zero. There is no persistent business-data cache.
+  - The older untracked-issued count remains in the collection summary for existing callers. The dashboard does not show it as a warning, badge, or setup task.
+  - Apply the new SQL to Value CRM before serving this frontend. An older frontend ignores the new fields. This frontend cannot read a summary that does not have them. No browser check was made.
+- References: `supabase/migrations/20261025143000_dashboard_overview_aggregates.sql`, `supabase/tests/owner_dashboard_payments.sql`, `src/pages/Dashboard.tsx`, `src/components/DashboardOverview.tsx`, `src/lib/reporting.ts`, `README.md`
