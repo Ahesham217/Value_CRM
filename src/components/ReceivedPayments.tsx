@@ -79,6 +79,7 @@ export function ReceivedPayments() {
     action: ReviewAction;
     reference: string;
     note: string;
+    version: number;
   } | null>(null);
   const mountedRef = useRef(true);
   const receiptRef = useRef(location.receiptId);
@@ -97,7 +98,7 @@ export function ReceivedPayments() {
     return mountedRef.current && receiptRef.current === receiptId && detailTicket.current === ticket;
   }
 
-  function submissionKeyFor(receiptId: string, action: ReviewAction, reference: string, note: string) {
+  function submissionKeyFor(receiptId: string, action: ReviewAction, reference: string, note: string, version: number) {
     const normalizedReference = reference.trim();
     const normalizedNote = note.trim();
     const current = submission.current;
@@ -107,12 +108,17 @@ export function ReceivedPayments() {
       && current.action === action
       && current.reference === normalizedReference
       && current.note === normalizedNote
+      && current.version === version
     ) {
       return current.key;
     }
     const key = crypto.randomUUID();
-    submission.current = { key, receiptId, action, reference: normalizedReference, note: normalizedNote };
+    submission.current = { key, receiptId, action, reference: normalizedReference, note: normalizedNote, version };
     return key;
+  }
+
+  function retireSubmission(key: string) {
+    if (submission.current?.key === key) submission.current = null;
   }
 
   useEffect(() => {
@@ -266,7 +272,7 @@ export function ReceivedPayments() {
       setMessage(null);
       return;
     }
-    const idempotencyKey = submissionKeyFor(receiptId, action, reference, note);
+    const idempotencyKey = submissionKeyFor(receiptId, action, reference, note, detail.review.version);
     setSaving(true);
     setFormError(null);
     setMessage(null);
@@ -288,28 +294,38 @@ export function ReceivedPayments() {
     } catch (caught) {
       saveError = { message: errorText(caught) };
     }
+    if (saveError || !mountedRef.current) {
+      if (!mountedRef.current) return;
+      if (!stillCurrent(receiptId, ticket)) return;
+      setSaving(false);
+      if (saveError) {
+        setFormError(errorText(saveError));
+        setConflict(isConflict(saveError));
+      }
+      return;
+    }
+    let next: ReceiptReviewDetail;
+    try {
+      next = readReceiptReview(data);
+    } catch (caught) {
+      if (!stillCurrent(receiptId, ticket)) return;
+      setSaving(false);
+      setFormError(errorText(caught));
+      return;
+    }
+    retireSubmission(idempotencyKey);
     if (!mountedRef.current) return;
     if (!stillCurrent(receiptId, ticket)) {
-      if (!saveError) setListToken((value) => value + 1);
+      setListToken((value) => value + 1);
       return;
     }
     setSaving(false);
-    if (saveError) {
-      setFormError(errorText(saveError));
-      setConflict(isConflict(saveError));
-      return;
-    }
-    try {
-      const next = readReceiptReview(data);
-      setDetail(next);
-      setConflict(false);
-      setDraft(draftFromDetail(next));
-      draftReceipt.current = next.receipt.id;
-      setMessage(successMessage(action));
-      setListToken((value) => value + 1);
-    } catch (caught) {
-      setFormError(errorText(caught));
-    }
+    setDetail(next);
+    setConflict(false);
+    setDraft(draftFromDetail(next));
+    draftReceipt.current = next.receipt.id;
+    setMessage(reviewResultMessage(next));
+    setListToken((value) => value + 1);
   }
 
   const pageCount = Math.max(1, Math.ceil((register?.count ?? 0) / PAGE_SIZE));
@@ -459,10 +475,18 @@ export function ReceivedPayments() {
   );
 }
 
-function successMessage(action: ReviewAction): string {
-  if (action === "verify") return "Payment verified. The receipt and its balance are unchanged.";
-  if (action === "clarify") return "Marked as needing clarification. The receipt and its balance are unchanged.";
-  return "Review reopened. The earlier verification stays in the history.";
+function reviewResultMessage(detail: ReceiptReviewDetail): string {
+  switch (detail.review.displayStatus) {
+    case "verified":
+      return "Payment verified. The receipt and its balance are unchanged.";
+    case "needs_clarification":
+      return "Marked as needing clarification. The receipt and its balance are unchanged.";
+    case "awaiting_review":
+      return "The receipt is awaiting finance review. The receipt and its balance are unchanged.";
+    case "reversed":
+    case "reversed_previously_verified":
+      return "This receipt is reversed. It is not a verified payment.";
+  }
 }
 
 function ReceiptDetail({

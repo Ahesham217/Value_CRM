@@ -467,7 +467,7 @@ describe("Payments finance review", () => {
       p_expected_version: 3,
       p_payload: expect.objectContaining({ note: "Wrong voucher" }),
     });
-    expect(reopenContainer.textContent).toContain("Review reopened");
+    expect(reopenContainer.textContent).toContain("The receipt is awaiting finance review.");
   });
 
   it("hides finance actions without permission and keeps a reversed verification historical", async () => {
@@ -555,6 +555,160 @@ describe("Payments finance review", () => {
     const changedAction = calls("review_payment_receipt").at(-1);
     expect(changedAction).toMatchObject({ p_action: "clarify" });
     expect((changedAction?.p_payload as { idempotency_key: string }).idempotency_key).not.toBe(changedNote.idempotency_key);
+  });
+
+  it("retries a lost verification with the same submission id", async () => {
+    let attempts = 0;
+    harness.rpc.mockImplementation((name: string, args: Record<string, unknown>) => {
+      if (name === "review_payment_receipt") {
+        attempts += 1;
+        if (attempts === 1) throw new Error("Failed to fetch");
+        return Promise.resolve({ data: harness.reviewData, error: null });
+      }
+      if (name === "received_payment_detail") return Promise.resolve({ data: receiptJson(awaitingReview()), error: null });
+      if (name === "received_payment_register") {
+        return Promise.resolve({ data: { status: args.p_status, count: 1, rows: [registerRow()] }, error: null });
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+    const container = renderPayments(`/payments?tab=received&review=awaiting&rid=${RECEIPT}`);
+    await flush();
+    typeControl(labeledControl(container, "Internal payment reference"), "VCH-9");
+    typeControl(labeledControl(container, "Finance note"), "Checked");
+    clickButton(container, "Verify payment");
+    await flush();
+    expect(container.textContent).toContain("Failed to fetch");
+    expect(container.textContent).not.toContain("Payment verified");
+    const first = (calls("review_payment_receipt").at(-1)?.p_payload as { idempotency_key: string }).idempotency_key;
+    clickButton(container, "Verify payment");
+    await flush();
+    const second = calls("review_payment_receipt").at(-1);
+    expect((second?.p_payload as { idempotency_key: string }).idempotency_key).toBe(first);
+    expect(second).toMatchObject({ p_expected_version: 0 });
+    expect(container.textContent).toContain("Payment verified");
+  });
+
+  it("uses a new submission id after an accepted verification is reopened", async () => {
+    const receiptB = "22222222-2222-4222-8222-222222222222";
+    const verified = receiptJson({
+      status: "verified",
+      display_status: "verified",
+      internal_reference: "VCH-9",
+      note: "Checked",
+      reviewed_by: "user-1",
+      reviewed_by_name: "Ada",
+      reviewed_at: "2026-11-03T10:00:00Z",
+      version: 1,
+      ever_verified: true,
+    }, { already_applied: false, action: "verify" });
+    const reopened = receiptJson({
+      status: "awaiting_review",
+      display_status: "awaiting_review",
+      internal_reference: null,
+      note: null,
+      reviewed_by: null,
+      reviewed_by_name: null,
+      reviewed_at: null,
+      version: 2,
+      ever_verified: true,
+    });
+    const verifiedAgain = receiptJson({
+      status: "verified",
+      display_status: "verified",
+      internal_reference: "VCH-9",
+      note: "Checked",
+      reviewed_by: "user-1",
+      reviewed_by_name: "Ada",
+      reviewed_at: "2026-11-03T11:00:00Z",
+      version: 3,
+      ever_verified: true,
+    }, { already_applied: false, action: "verify" });
+    let detailPhase: "open" | "reopened" = "open";
+    let reviewPhase: "first" | "again" = "first";
+    harness.rpc.mockImplementation((name: string, args: Record<string, unknown>) => {
+      if (name === "review_payment_receipt") {
+        return Promise.resolve({ data: reviewPhase === "first" ? verified : verifiedAgain, error: null });
+      }
+      if (name === "received_payment_detail") {
+        const id = String(args.p_receipt_id);
+        if (id === receiptB) {
+          const other = receiptJson(awaitingReview());
+          other.receipt.id = receiptB;
+          other.source.client_name = "Beta";
+          return Promise.resolve({ data: other, error: null });
+        }
+        return Promise.resolve({ data: detailPhase === "reopened" ? reopened : receiptJson(awaitingReview()), error: null });
+      }
+      if (name === "received_payment_register") {
+        return Promise.resolve({
+          data: {
+            status: args.p_status,
+            count: 2,
+            rows: [registerRow(), { ...registerRow(), id: receiptB, client_name: "Beta", reference: "BANK-2" }],
+          },
+          error: null,
+        });
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+    const container = renderPayments(`/payments?tab=received&review=awaiting&rid=${RECEIPT}`);
+    await flush();
+    typeControl(labeledControl(container, "Internal payment reference"), "VCH-9");
+    typeControl(labeledControl(container, "Finance note"), "Checked");
+    clickButton(container, "Verify payment");
+    await flush();
+    expect(container.textContent).toContain("Payment verified");
+    const first = calls("review_payment_receipt").at(-1);
+    const firstKey = (first?.p_payload as { idempotency_key: string }).idempotency_key;
+    expect(first).toMatchObject({ p_expected_version: 0 });
+
+    detailPhase = "reopened";
+    reviewPhase = "again";
+    clickButton(container, "Beta");
+    await flush();
+    clickButton(container, "Acme");
+    await flush();
+    expect(container.textContent).toContain("Awaiting finance review");
+    expect(container.textContent).not.toContain("Payment verified");
+    typeControl(labeledControl(container, "Internal payment reference"), "VCH-9");
+    typeControl(labeledControl(container, "Finance note"), "Checked");
+    clickButton(container, "Verify payment");
+    await flush();
+    const second = calls("review_payment_receipt").at(-1);
+    expect(second).toMatchObject({ p_action: "verify", p_expected_version: 2 });
+    expect((second?.p_payload as { idempotency_key: string }).idempotency_key).not.toBe(firstKey);
+    expect(container.textContent).toContain("Payment verified");
+  });
+
+  it("does not announce verification when an old submission returns a later review", async () => {
+    const awaitingLater = receiptJson({
+      status: "awaiting_review",
+      display_status: "awaiting_review",
+      internal_reference: null,
+      note: null,
+      reviewed_by: null,
+      reviewed_by_name: null,
+      reviewed_at: null,
+      version: 2,
+      ever_verified: true,
+    }, { already_applied: true, action: "verify" });
+    harness.rpc.mockImplementation((name: string, args: Record<string, unknown>) => {
+      if (name === "review_payment_receipt") return Promise.resolve({ data: awaitingLater, error: null });
+      if (name === "received_payment_detail") return Promise.resolve({ data: receiptJson(awaitingReview()), error: null });
+      if (name === "received_payment_register") {
+        return Promise.resolve({ data: { status: args.p_status, count: 1, rows: [registerRow()] }, error: null });
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+    const container = renderPayments(`/payments?tab=received&review=awaiting&rid=${RECEIPT}`);
+    await flush();
+    typeControl(labeledControl(container, "Internal payment reference"), "VCH-9");
+    typeControl(labeledControl(container, "Finance note"), "Checked");
+    clickButton(container, "Verify payment");
+    await flush();
+    expect(container.textContent).not.toContain("Payment verified");
+    expect(container.textContent).toContain("The receipt is awaiting finance review.");
+    expect(container.textContent).toContain("Awaiting finance review");
   });
 
   it("ignores a finished review or reload after another receipt is open", async () => {
