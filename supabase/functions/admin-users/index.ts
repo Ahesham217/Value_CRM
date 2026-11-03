@@ -1,26 +1,13 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { profileFlags, type ProfileFlagInput } from "./profile-flags.ts";
 
 type Visibility = "all" | "associated";
 
-type UserInput = {
+type UserInput = ProfileFlagInput & {
   id?: string;
   email?: string;
-  full_name?: string;
-  phone?: string;
-  is_active?: boolean;
-  is_admin?: boolean;
-  is_salesperson?: boolean;
   pi_visibility?: Visibility;
-  can_edit_drafts?: boolean;
-  can_generate_pis?: boolean;
-  can_manage_clients?: boolean;
-  can_manage_vendors?: boolean;
-  can_manage_products?: boolean;
-  can_view_purchase_prices?: boolean;
-  can_manage_payments?: boolean;
-  can_reverse_payments?: boolean;
-  can_activate_zero_subscriptions?: boolean;
 };
 
 const cors = {
@@ -34,31 +21,6 @@ function json(body: unknown, status = 200): Response {
     status,
     headers: { ...cors, "Content-Type": "application/json" },
   });
-}
-
-const paymentFlags = ["can_manage_payments", "can_reverse_payments", "can_activate_zero_subscriptions"] as const;
-
-function flags(user: UserInput, existing?: Record<string, unknown>) {
-  const profile: Record<string, unknown> = {
-    full_name: (user.full_name ?? "").trim(),
-    phone: (user.phone ?? "").trim(),
-    is_active: user.is_active !== false,
-    is_admin: user.is_admin === true,
-    is_salesperson: user.is_salesperson === true,
-    pi_visibility: user.pi_visibility === "all" ? "all" : "associated",
-    can_edit_drafts: user.can_edit_drafts === true,
-    can_generate_pis: user.can_generate_pis === true,
-    can_manage_clients: user.can_manage_clients === true,
-    can_manage_vendors: user.can_manage_vendors === true,
-    can_manage_products: user.can_manage_products === true,
-    can_view_purchase_prices: user.can_view_purchase_prices === true,
-  };
-  for (const flag of paymentFlags) {
-    if (existing && !(flag in existing)) continue;
-    const requested = user[flag];
-    profile[flag] = requested === undefined ? existing?.[flag] === true : requested === true;
-  }
-  return profile;
 }
 
 Deno.serve(async (req: Request) => {
@@ -149,7 +111,7 @@ Deno.serve(async (req: Request) => {
       if (created.error || !created.data.user) return json({ error: created.error?.message ?? "User was not created." }, 400);
       const { data: createdProfile, error: createdProfileError } = await admin.from("profiles").select("*").eq("id", created.data.user.id).maybeSingle();
       if (createdProfileError) return json({ error: createdProfileError.message }, 400);
-      const { error: updateError } = await admin.from("profiles").update(flags(input, createdProfile ?? undefined)).eq("id", created.data.user.id);
+      const { error: updateError } = await admin.from("profiles").update(profileFlags(input, createdProfile ?? undefined)).eq("id", created.data.user.id);
       if (updateError) return json({ error: updateError.message }, 400);
       return json({ id: created.data.user.id });
     }
@@ -158,7 +120,7 @@ Deno.serve(async (req: Request) => {
       if (!input.id) return json({ error: "User id is required." }, 400);
       const { data: existing, error: existingError } = await admin.from("profiles").select("*").eq("id", input.id).maybeSingle();
       if (existingError || !existing) return json({ error: existingError?.message ?? "User not found." }, 404);
-      const profile = flags(input, existing);
+      const profile = profileFlags(input, existing);
       const removingLastAdmin = existing.is_admin === true && existing.is_active === true && (profile.is_admin !== true || profile.is_active !== true);
       if (removingLastAdmin && await activeAdminCount(input.id) === 0) {
         return json({ error: "The last active administrator cannot be removed." }, 400);

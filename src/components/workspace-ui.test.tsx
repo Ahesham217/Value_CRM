@@ -71,6 +71,7 @@ describe("permission form groups", () => {
       "can_manage_payments",
       "can_reverse_payments",
       "can_activate_zero_subscriptions",
+      "can_review_payments",
     ];
     const keys = permissionFormGroups.flatMap((group) => group.checks.map((check) => check.key));
     for (const flag of flags) {
@@ -84,6 +85,8 @@ describe("permission form groups", () => {
     ]);
     const account: PermissionCheckKey[] = ["is_active", "is_admin", "is_salesperson"];
     for (const key of account) expect(keys).toContain(key);
+    expect(permissionFormGroups.flatMap((group) => group.checks).find((check) => check.key === "can_review_payments")?.label)
+      .toBe("Review received payments");
   });
 });
 

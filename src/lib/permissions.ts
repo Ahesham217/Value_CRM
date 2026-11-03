@@ -9,7 +9,8 @@ export type PermissionFlag =
   | "can_view_purchase_prices"
   | "can_manage_payments"
   | "can_reverse_payments"
-  | "can_activate_zero_subscriptions";
+  | "can_activate_zero_subscriptions"
+  | "can_review_payments";
 
 export function can(profile: Profile | null, flag: PermissionFlag): boolean {
   if (!profile?.is_active) return false;

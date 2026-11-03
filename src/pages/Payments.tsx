@@ -1,7 +1,8 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { ReceivedPayments } from "../components/ReceivedPayments";
 import { PaymentTable, PaymentTotals, PaymentViewChoices, emptyPaymentsCopy, paymentsCopy } from "../components/ReportingViews";
-import { EmptyState, Field, FilterChip, FilterPanel, FiltersButton, LoadingNote, PageHeader, Pagination, SearchField, Select, Toolbar, controlClass, quietActionClass } from "../components/ui";
+import { EmptyState, Field, FilterChip, FilterPanel, FiltersButton, LoadingNote, PageHeader, Pagination, SearchField, Select, Tabs, Toolbar, controlClass, quietActionClass } from "../components/ui";
 import { errorText } from "../lib/errors";
 import { displayStatusLabel } from "../lib/format";
 import { collectionLabel } from "../lib/payment-tracking";
@@ -21,6 +22,37 @@ import { supabase } from "../lib/supabase";
 import { SEARCH_DEBOUNCE_MS, useDebouncedValue } from "../lib/useDebouncedValue";
 
 export function PaymentsPage() {
+  const [params, setParams] = useSearchParams();
+  const tab = params.get("tab") === "received" ? "received" : "due";
+
+  function selectTab(next: "due" | "received") {
+    const updated = new URLSearchParams(params);
+    if (next === "received") updated.set("tab", "received");
+    else updated.delete("tab");
+    setParams(updated);
+  }
+
+  return (
+    <div>
+      <PageHeader
+        title="Payments"
+        subtitle={tab === "received" ? "Receipts already recorded, and their finance review" : "What is due, when, and what remains unpaid"}
+      />
+      <Tabs
+        label="Payment registers"
+        value={tab}
+        onChange={selectTab}
+        tabs={[
+          { id: "due", label: "Due payments" },
+          { id: "received", label: "Received payments" },
+        ]}
+      />
+      {tab === "received" ? <ReceivedPayments /> : <DuePayments />}
+    </div>
+  );
+}
+
+function DuePayments() {
   const navigate = useNavigate();
   const filtersId = useId();
   const [params, setParams] = useSearchParams();
@@ -128,7 +160,6 @@ export function PaymentsPage() {
 
   return (
     <div>
-      <PageHeader title="Payments" subtitle="What is due, when, and what remains unpaid" />
       <p className="mb-4 max-w-3xl text-sm text-secondary">{paymentsCopy()}</p>
       <div className="mb-4 overflow-x-auto">
         <PaymentViewChoices location={location} />
