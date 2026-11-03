@@ -11,6 +11,7 @@ import {
   compactReviewLabel,
   defaultReceivedFilter,
   formatReviewedAt,
+  latestVerification,
   parseReceivedLocation,
   readReceiptReview,
   readReceivedRegister,
@@ -18,6 +19,7 @@ import {
   reviewEventText,
   reviewStatusLabel,
   validateReviewAction,
+  verificationCount,
   withReceivedLocation,
   type ReceiptReviewDetail,
   type ReceivedLocation,
@@ -71,9 +73,47 @@ export function ReceivedPayments() {
   const [listToken, setListToken] = useState(0);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const draftReceipt = useRef("");
-  const submissionKey = useRef(crypto.randomUUID());
-  const keyedVersion = useRef("");
+  const submission = useRef<{
+    key: string;
+    receiptId: string;
+    action: ReviewAction;
+    reference: string;
+    note: string;
+  } | null>(null);
+  const mountedRef = useRef(true);
+  const receiptRef = useRef(location.receiptId);
+  const detailTicket = useRef(0);
+  receiptRef.current = location.receiptId;
   const rangeMessage = receivedRangeMessage(location.receivedFrom, location.receivedTo);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  function stillCurrent(receiptId: string, ticket: number) {
+    return mountedRef.current && receiptRef.current === receiptId && detailTicket.current === ticket;
+  }
+
+  function submissionKeyFor(receiptId: string, action: ReviewAction, reference: string, note: string) {
+    const normalizedReference = reference.trim();
+    const normalizedNote = note.trim();
+    const current = submission.current;
+    if (
+      current
+      && current.receiptId === receiptId
+      && current.action === action
+      && current.reference === normalizedReference
+      && current.note === normalizedNote
+    ) {
+      return current.key;
+    }
+    const key = crypto.randomUUID();
+    submission.current = { key, receiptId, action, reference: normalizedReference, note: normalizedNote };
+    return key;
+  }
 
   useEffect(() => {
     const requested = params.get("review");
@@ -151,16 +191,20 @@ export function ReceivedPayments() {
   }, [listToken, location.currency, location.page, location.receivedFrom, location.receivedTo, location.search, location.status, params, query, rangeMessage, setParams]);
 
   useEffect(() => {
-    if (!location.receiptId) {
+    const receiptId = location.receiptId;
+    const ticket = ++detailTicket.current;
+    if (!receiptId) {
       setDetail(null);
       setDetailError(null);
       setDetailLoading(false);
+      setSaving(false);
       return;
     }
     let active = true;
     setDetailLoading(true);
-    supabase.rpc("received_payment_detail", { p_receipt_id: location.receiptId }).then(({ data, error: queryError }) => {
-      if (!active) return;
+    setSaving(false);
+    supabase.rpc("received_payment_detail", { p_receipt_id: receiptId }).then(({ data, error: queryError }) => {
+      if (!active || !stillCurrent(receiptId, ticket)) return;
       if (queryError) {
         setDetailError(errorText(queryError));
         setDetailLoading(false);
@@ -170,11 +214,6 @@ export function ReceivedPayments() {
         const next = readReceiptReview(data);
         setDetail(next);
         setDetailError(null);
-        const key = `${next.receipt.id}:${next.review.version}`;
-        if (keyedVersion.current !== key) {
-          keyedVersion.current = key;
-          submissionKey.current = crypto.randomUUID();
-        }
         if (draftReceipt.current !== next.receipt.id) {
           draftReceipt.current = next.receipt.id;
           setDraft(draftFromDetail(next));
@@ -193,9 +232,12 @@ export function ReceivedPayments() {
   }, [location.receiptId]);
 
   async function reloadDetail() {
-    if (!location.receiptId) return;
+    const receiptId = receiptRef.current;
+    if (!receiptId) return;
+    const ticket = ++detailTicket.current;
     setDetailLoading(true);
-    const { data, error: queryError } = await supabase.rpc("received_payment_detail", { p_receipt_id: location.receiptId });
+    const { data, error: queryError } = await supabase.rpc("received_payment_detail", { p_receipt_id: receiptId });
+    if (!stillCurrent(receiptId, ticket)) return;
     setDetailLoading(false);
     if (queryError) {
       setDetailError(errorText(queryError));
@@ -207,9 +249,6 @@ export function ReceivedPayments() {
       setDetailError(null);
       setConflict(false);
       setMessage("The receipt was reloaded. The saved review is shown below.");
-      const key = `${next.receipt.id}:${next.review.version}`;
-      keyedVersion.current = key;
-      submissionKey.current = crypto.randomUUID();
     } catch (caught) {
       setDetailError(errorText(caught));
     }
@@ -217,6 +256,8 @@ export function ReceivedPayments() {
 
   async function submit(action: ReviewAction) {
     if (!detail || saving) return;
+    const receiptId = detail.receipt.id;
+    const ticket = detailTicket.current;
     const note = action === "verify" ? draft.note : action === "clarify" ? draft.clarify : draft.reopen;
     const reference = action === "verify" ? draft.reference : (detail.review.internalReference ?? "");
     const problem = validateReviewAction(action, { internalReference: reference, note });
@@ -225,19 +266,33 @@ export function ReceivedPayments() {
       setMessage(null);
       return;
     }
+    const idempotencyKey = submissionKeyFor(receiptId, action, reference, note);
     setSaving(true);
     setFormError(null);
     setMessage(null);
-    const { data, error: saveError } = await supabase.rpc("review_payment_receipt", {
-      p_receipt_id: detail.receipt.id,
-      p_action: action,
-      p_expected_version: detail.review.version,
-      p_payload: {
-        internal_reference: reference.trim(),
-        note: note.trim(),
-        idempotency_key: submissionKey.current,
-      },
-    });
+    let data: unknown;
+    let saveError: { message?: string } | null = null;
+    try {
+      const result = await supabase.rpc("review_payment_receipt", {
+        p_receipt_id: receiptId,
+        p_action: action,
+        p_expected_version: detail.review.version,
+        p_payload: {
+          internal_reference: reference.trim(),
+          note: note.trim(),
+          idempotency_key: idempotencyKey,
+        },
+      });
+      data = result.data;
+      saveError = result.error;
+    } catch (caught) {
+      saveError = { message: errorText(caught) };
+    }
+    if (!mountedRef.current) return;
+    if (!stillCurrent(receiptId, ticket)) {
+      if (!saveError) setListToken((value) => value + 1);
+      return;
+    }
     setSaving(false);
     if (saveError) {
       setFormError(errorText(saveError));
@@ -250,9 +305,6 @@ export function ReceivedPayments() {
       setConflict(false);
       setDraft(draftFromDetail(next));
       draftReceipt.current = next.receipt.id;
-      const key = `${next.receipt.id}:${next.review.version}`;
-      keyedVersion.current = key;
-      submissionKey.current = crypto.randomUUID();
       setMessage(successMessage(action));
       setListToken((value) => value + 1);
     } catch (caught) {
@@ -437,6 +489,8 @@ function ReceiptDetail({
   const reversed = detail.review.displayStatus === "reversed" || detail.review.displayStatus === "reversed_previously_verified";
   const verified = detail.review.displayStatus === "verified";
   const actions = detail.canReview && !reversed;
+  const historicalVerification = latestVerification(detail.history);
+  const historicalCount = verificationCount(detail.history);
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -460,9 +514,11 @@ function ReceiptDetail({
         <div>
           <dt className="text-muted">Reviewed by</dt>
           <dd>
-            {detail.review.reviewedByName
-              ? `${detail.review.reviewedByName} · ${formatReviewedAt(detail.review.reviewedAt)}`
-              : "—"}
+            {reversed && historicalVerification
+              ? `${historicalVerification.actorName} · ${formatReviewedAt(historicalVerification.actedAt)}`
+              : detail.review.displayStatus === "verified" && detail.review.reviewedByName
+                ? `${detail.review.reviewedByName} · ${formatReviewedAt(detail.review.reviewedAt)}`
+                : "—"}
           </dd>
         </div>
       </dl>
@@ -473,12 +529,12 @@ function ReceiptDetail({
       {detail.review.status === "verified" && detail.review.note && !reversed ? (
         <p className="text-sm text-secondary">Finance note: {detail.review.note}</p>
       ) : null}
-      {reversed && detail.review.everVerified ? (
+      {reversed && historicalVerification ? (
         <p className="text-sm text-ink">
-          Reversed · previously verified
-          {detail.review.reviewedByName ? ` by ${detail.review.reviewedByName}` : ""}
-          {detail.review.reviewedAt ? ` on ${formatReviewedAt(detail.review.reviewedAt)}` : ""}.
-          {detail.review.internalReference ? ` Internal reference ${detail.review.internalReference}.` : ""}
+          {historicalCount > 1
+            ? `Reversed · latest verification by ${historicalVerification.actorName} on ${formatReviewedAt(historicalVerification.actedAt)}.`
+            : `Reversed · previously verified by ${historicalVerification.actorName} on ${formatReviewedAt(historicalVerification.actedAt)}.`}
+          {historicalVerification.internalReference ? ` Internal reference ${historicalVerification.internalReference}.` : ""}
         </p>
       ) : null}
       {detail.receipt.reversedAt ? (

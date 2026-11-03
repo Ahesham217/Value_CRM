@@ -506,10 +506,36 @@ begin
     v_fail := v_fail || 'verify moved a numbering counter; ';
   end if;
 
-  v_result := public.review_payment_receipt(v_partial, 'verify', 0, jsonb_build_object('idempotency_key', v_key, 'internal_reference', 'VCH-SHARED', 'note', 'Checked'));
+  v_result := public.review_payment_receipt(v_partial, 'verify', 0, jsonb_build_object('idempotency_key', v_key, 'internal_reference', '  VCH-SHARED  ', 'note', '  Checked  '));
   select count(*) into v_events from public.payment_receipt_review_events where receipt_id = v_partial;
-  if (v_result ->> 'already_applied')::boolean is not true or v_events <> 1 then
-    v_fail := v_fail || 'repeated submission created history ' || v_events::text || '; ';
+  if (v_result ->> 'already_applied')::boolean is not true
+    or v_events <> 1
+    or (v_result #>> '{review,internal_reference}') is distinct from 'VCH-SHARED'
+  then
+    v_fail := v_fail || 'exact submission replay was not recognized ' || v_result::text || '; ';
+  end if;
+  begin
+    perform public.review_payment_receipt(v_partial, 'verify', 1, jsonb_build_object('idempotency_key', v_key, 'internal_reference', 'DIFFERENT-VOUCHER', 'note', 'Checked'));
+    v_fail := v_fail || 'changed reference reused a submission id; ';
+  exception when others then
+    if sqlerrm not like '%already used for a different review%' then v_fail := v_fail || 'changed reference ' || sqlerrm || '; '; end if;
+  end;
+  begin
+    perform public.review_payment_receipt(v_partial, 'verify', 1, jsonb_build_object('idempotency_key', v_key, 'internal_reference', 'VCH-SHARED', 'note', 'A different note'));
+    v_fail := v_fail || 'changed note reused a submission id; ';
+  exception when others then
+    if sqlerrm not like '%already used for a different review%' then v_fail := v_fail || 'changed note ' || sqlerrm || '; '; end if;
+  end;
+  begin
+    perform public.review_payment_receipt(v_partial, 'clarify', 1, jsonb_build_object('idempotency_key', v_key, 'internal_reference', 'VCH-SHARED', 'note', 'Checked'));
+    v_fail := v_fail || 'changed action reused a submission id; ';
+  exception when others then
+    if sqlerrm not like '%already used for a different review%' then v_fail := v_fail || 'changed action ' || sqlerrm || '; '; end if;
+  end;
+  if (select internal_reference from public.payment_receipt_reviews where receipt_id = v_partial) is distinct from 'VCH-SHARED'
+    or (select count(*) from public.payment_receipt_review_events where receipt_id = v_partial) <> 1
+  then
+    v_fail := v_fail || 'a mismatched submission changed the saved review; ';
   end if;
   v_result := public.review_payment_receipt(v_partial, 'verify', 1, jsonb_build_object('idempotency_key', gen_random_uuid(), 'internal_reference', 'VCH-SHARED', 'note', 'Checked'));
   select count(*) into v_events from public.payment_receipt_review_events where receipt_id = v_partial;
@@ -562,6 +588,26 @@ begin
     or (select internal_reference from public.payment_receipt_reviews where receipt_id = v_partial) is distinct from 'VCH-CORRECTED'
   then
     v_fail := v_fail || 'correction history ' || v_result::text || '; ';
+  end if;
+  v_result := public.review_payment_receipt(v_partial, 'verify', 0, jsonb_build_object('idempotency_key', v_key, 'internal_reference', 'VCH-SHARED', 'note', 'Checked'));
+  select count(*) into v_events from public.payment_receipt_review_events where receipt_id = v_partial;
+  if (v_result ->> 'already_applied')::boolean is not true
+    or v_events <> 3
+    or (v_result #>> '{review,internal_reference}') is distinct from 'VCH-CORRECTED'
+    or (v_result #>> '{review,status}') is distinct from 'verified'
+  then
+    v_fail := v_fail || 'original submission replay changed a later review ' || v_result::text || '; ';
+  end if;
+  begin
+    perform public.review_payment_receipt(v_partial, 'verify', 3, jsonb_build_object('idempotency_key', v_key, 'internal_reference', 'DIFFERENT-VOUCHER', 'note', 'Checked'));
+    v_fail := v_fail || 'later transition accepted a different submission; ';
+  exception when others then
+    if sqlerrm not like '%already used for a different review%' then v_fail := v_fail || 'later mismatch ' || sqlerrm || '; '; end if;
+  end;
+  if (select internal_reference from public.payment_receipt_reviews where receipt_id = v_partial) is distinct from 'VCH-CORRECTED'
+    or (select count(*) from public.payment_receipt_review_events where receipt_id = v_partial) <> 3
+  then
+    v_fail := v_fail || 'a later mismatched submission changed the corrected review; ';
   end if;
 
   v_result := public.review_payment_receipt(v_split, 'clarify', 0, jsonb_build_object('idempotency_key', gen_random_uuid(), 'note', 'Which account sent this?'));
@@ -654,6 +700,61 @@ begin
   if v_sub_before is null or v_sub_before is distinct from v_sub_after or pg_temp.finance_state(v_mixed_receipt) is distinct from v_before then
     v_fail := v_fail || 'review changed the subscription or mixed receipt; ';
   end if;
+  perform public.review_payment_receipt(v_mixed_receipt, 'reopen', 1, jsonb_build_object('idempotency_key', gen_random_uuid(), 'note', 'Use the second voucher'));
+  perform set_config('request.jwt.claim.sub', v_all::text, true);
+  perform public.review_payment_receipt(v_mixed_receipt, 'verify', 2, jsonb_build_object('idempotency_key', gen_random_uuid(), 'internal_reference', 'VCH-MIXED-2', 'note', 'Second check'));
+  select to_jsonb(s) into v_sub_after from public.subscriptions s where payment_obligation_id = v_zero;
+  if v_sub_before is distinct from v_sub_after or pg_temp.finance_state(v_mixed_receipt) is distinct from v_before then
+    v_fail := v_fail || 'a second verification changed the subscription or receipt; ';
+  end if;
+  perform set_config('request.jwt.claim.sub', v_reverser::text, true);
+  perform public.reverse_payment_receipt(v_mixed_receipt, 'The mixed receipt was duplicated');
+  perform set_config('request.jwt.claim.sub', v_finance::text, true);
+  v_result := public.received_payment_detail(v_mixed_receipt);
+  if (v_result #>> '{review,display_status}') is distinct from 'reversed_previously_verified'
+    or (v_result #>> '{history,0,actor_id}') is distinct from v_finance::text
+    or (v_result #>> '{history,0,internal_reference}') is distinct from 'VCH-MIXED'
+    or (v_result #>> '{history,2,actor_id}') is distinct from v_all::text
+    or (v_result #>> '{history,2,action}') is distinct from 'verified'
+    or (v_result #>> '{history,2,internal_reference}') is distinct from 'VCH-MIXED-2'
+    or (v_result #>> '{receipt,reference}') is distinct from 'BANK-MIXED'
+    or (v_result #>> '{receipt,amount}') is distinct from '10000.00'
+    or (select count(*) from public.payment_receipt_review_events where receipt_id = v_mixed_receipt and action = 'verified') <> 2
+  then
+    v_fail := v_fail || 'second verification history ' || v_result::text || '; ';
+  end if;
+
+  v_before := pg_temp.finance_state(v_egp);
+  perform set_config('request.jwt.claim.sub', v_finance::text, true);
+  perform public.review_payment_receipt(v_egp, 'verify', 0, jsonb_build_object('idempotency_key', gen_random_uuid(), 'internal_reference', 'VCH-EGP', 'note', 'First check'));
+  perform public.review_payment_receipt(v_egp, 'reopen', 1, jsonb_build_object('idempotency_key', gen_random_uuid(), 'note', 'Need another look'));
+  perform set_config('request.jwt.claim.sub', v_all::text, true);
+  perform public.review_payment_receipt(v_egp, 'clarify', 2, jsonb_build_object('idempotency_key', gen_random_uuid(), 'note', 'Which account sent this?'));
+  v_result := public.received_payment_detail(v_egp);
+  if (v_result #>> '{review,reviewed_by}') is distinct from v_all::text
+    or (v_result #>> '{review,status}') is distinct from 'needs_clarification'
+    or (v_result #>> '{history,0,actor_id}') is distinct from v_finance::text
+    or (v_result #>> '{history,0,action}') is distinct from 'verified'
+    or (v_result #>> '{history,0,internal_reference}') is distinct from 'VCH-EGP'
+    or pg_temp.finance_state(v_egp) is distinct from v_before
+  then
+    v_fail := v_fail || 'clarifier replaced the verifier in stored history ' || v_result::text || '; ';
+  end if;
+  perform set_config('request.jwt.claim.sub', v_reverser::text, true);
+  perform public.reverse_payment_receipt(v_egp, 'The Egypt receipt was posted twice');
+  perform set_config('request.jwt.claim.sub', v_finance::text, true);
+  v_result := public.received_payment_detail(v_egp);
+  if (v_result #>> '{review,display_status}') is distinct from 'reversed_previously_verified'
+    or (v_result #>> '{review,reviewed_by}') is distinct from v_all::text
+    or (v_result #>> '{history,0,actor_id}') is distinct from v_finance::text
+    or (v_result #>> '{history,2,actor_id}') is distinct from v_all::text
+    or (v_result #>> '{history,2,action}') is distinct from 'needs_clarification'
+    or (v_result #>> '{receipt,reference}') is distinct from 'BANK-EGP'
+    or (v_result #>> '{receipt,amount}') is distinct from '50.00'
+    or v_result #>> '{receipt,reversed_at}' is null
+  then
+    v_fail := v_fail || 'reversed clarification kept the wrong verifier ' || v_result::text || '; ';
+  end if;
 
   begin
     update public.payment_receipts set reference = 'CHANGED' where id = v_partial;
@@ -709,7 +810,7 @@ begin
     perform set_config('request.jwt.claim.sub', v_finance::text, true);
     execute 'set local role authenticated';
     select count(*) into v_count from public.payment_receipt_reviews;
-    if v_count <> 4 then
+    if v_count <> 5 then
       v_fail := v_fail || 'authenticated review count ' || v_count::text || '; ';
     end if;
     if exists (select 1 from public.payment_receipt_reviews where receipt_id = v_secret) then

@@ -102,9 +102,14 @@ create table public.payment_receipt_review_events (
   acted_at timestamptz not null default now(),
   version integer not null check (version >= 1),
   idempotency_key uuid not null,
+  request_action text not null check (request_action in ('verify', 'clarify', 'reopen')),
+  request_internal_reference text,
+  request_note text,
   unique (receipt_id, idempotency_key),
   check (internal_reference is null or char_length(internal_reference) between 1 and 80),
   check (note is null or char_length(note) between 1 and 400),
+  check (request_internal_reference is null or char_length(request_internal_reference) between 1 and 80),
+  check (request_note is null or char_length(request_note) between 1 and 400),
   check (
     (
       action = 'verified'
@@ -128,7 +133,7 @@ create table public.payment_receipt_review_events (
 );
 
 comment on table public.payment_receipt_review_events is
-  'Append-only history of finance review transitions. Rows are not edited or deleted. The actor and time come from the database session, not from the submitted payload.';
+  'Append-only history of finance review transitions. Rows are not edited or deleted. The actor and time come from the database session, not from the submitted payload. request_action, request_internal_reference, and request_note are the normalized submission that idempotency_key identifies.';
 
 create index payment_receipt_reviews_status_idx
   on public.payment_receipt_reviews (status, receipt_id);
@@ -435,6 +440,12 @@ declare
   v_current_note text;
   v_version integer;
   v_ever boolean;
+  v_request_reference text;
+  v_request_note text;
+  v_saved_action text;
+  v_saved_reference text;
+  v_saved_note text;
+  v_saved_found boolean := false;
   v_now timestamptz := pg_catalog.now();
   v_actor uuid := (select auth.uid());
   v_new_version integer;
@@ -459,6 +470,8 @@ begin
   end if;
   v_reference := nullif(btrim(coalesce(p_payload ->> 'internal_reference', '')), '');
   v_note := nullif(btrim(coalesce(p_payload ->> 'note', '')), '');
+  v_request_reference := v_reference;
+  v_request_note := v_note;
   if v_reference is not null and char_length(v_reference) > 80 then
     raise exception 'The internal payment reference must be 80 characters or fewer.';
   end if;
@@ -499,12 +512,19 @@ begin
   v_version := case when v_has_review then v_review.version else 0 end;
   v_ever := case when v_has_review then v_review.ever_verified else false end;
 
-  if exists (
-    select 1
-    from public.payment_receipt_review_events event
-    where event.receipt_id = v_receipt.id
-      and event.idempotency_key = v_key
-  ) then
+  select event.request_action, event.request_internal_reference, event.request_note
+  into v_saved_action, v_saved_reference, v_saved_note
+  from public.payment_receipt_review_events event
+  where event.receipt_id = v_receipt.id
+    and event.idempotency_key = v_key;
+  v_saved_found := found;
+  if v_saved_found then
+    if v_saved_action is distinct from v_action
+      or v_saved_reference is distinct from v_request_reference
+      or v_saved_note is distinct from v_request_note
+    then
+      raise exception 'This submission id was already used for a different review. Reload the receipt and submit it again.';
+    end if;
     return private.receipt_review_payload(v_receipt.id) || jsonb_build_object(
       'already_applied', true,
       'action', v_action
@@ -601,7 +621,8 @@ begin
 
   insert into public.payment_receipt_review_events (
     receipt_id, action, from_status, to_status, internal_reference, note,
-    actor_id, acted_at, version, idempotency_key
+    actor_id, acted_at, version, idempotency_key,
+    request_action, request_internal_reference, request_note
   ) values (
     v_receipt.id,
     case v_action when 'verify' then 'verified' when 'clarify' then 'needs_clarification' else 'reopened' end,
@@ -612,7 +633,10 @@ begin
     v_actor,
     v_now,
     v_new_version,
-    v_key
+    v_key,
+    v_action,
+    v_request_reference,
+    v_request_note
   );
   perform set_config('value_crm.receipt_review_write', 'off', true);
 
@@ -624,7 +648,7 @@ end;
 $$;
 
 comment on function private.review_payment_receipt(uuid, text, integer, jsonb) is
-  'Verify, ask for clarification, or reopen a receipt review. The receipt amount, reference, allocations, balances, and subscriptions are not changed. The reviewer and time are the signed-in user and the database clock. A stale version is rejected. The same submission id does not append another history row.';
+  'Verify, ask for clarification, or reopen a receipt review. The receipt amount, reference, allocations, balances, and subscriptions are not changed. The reviewer and time are the signed-in user and the database clock. A stale version is rejected. A submission id identifies one normalized action, reference, and note. Repeating that request does not append another history row. Reusing the id for a different request is rejected.';
 
 create or replace function private.received_payment_register(
   p_status text,

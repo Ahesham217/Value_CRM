@@ -169,6 +169,18 @@ export function compactReviewLabel(status: ReviewDisplayStatus): string {
   }
 }
 
+export function latestVerification(history: ReviewEvent[]): ReviewEvent | null {
+  let latest: ReviewEvent | null = null;
+  for (const event of history) {
+    if (event.action === "verified") latest = event;
+  }
+  return latest;
+}
+
+export function verificationCount(history: ReviewEvent[]): number {
+  return history.filter((event) => event.action === "verified").length;
+}
+
 export function receiptReviewDisplay(input: {
   reversed: boolean;
   status: string | null;

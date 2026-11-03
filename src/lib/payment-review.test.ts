@@ -3,6 +3,7 @@ import { parsePaymentLocation } from "./reporting";
 import {
   compactReviewLabel,
   defaultReceivedFilter,
+  latestVerification,
   parseReceivedLocation,
   readReceiptReview,
   readReceivedRegister,
@@ -72,6 +73,17 @@ describe("review labels and validation", () => {
     expect(reviewStatusLabel("reversed_previously_verified")).toBe("Reversed · previously verified");
     expect(receiptReviewDisplay({ reversed: true, status: "awaiting_review", everVerified: false })).toBe("reversed");
     expect(receiptReviewDisplay({ reversed: false, status: "awaiting_review", everVerified: true })).toBe("awaiting_review");
+  });
+
+  it("uses the latest verification event rather than a later clarification", () => {
+    const history = [
+      { id: "1", action: "verified" as const, fromStatus: "awaiting_review" as const, toStatus: "verified" as const, internalReference: "VCH-1", note: "First", actorId: "a", actorName: "Original Verifier", actedAt: "2026-11-03T09:00:00Z", version: 1 },
+      { id: "2", action: "reopened" as const, fromStatus: "verified" as const, toStatus: "awaiting_review" as const, internalReference: "VCH-1", note: "Again", actorId: "a", actorName: "Original Verifier", actedAt: "2026-11-03T10:00:00Z", version: 2 },
+      { id: "3", action: "verified" as const, fromStatus: "awaiting_review" as const, toStatus: "verified" as const, internalReference: "VCH-2", note: null, actorId: "b", actorName: "Second Verifier", actedAt: "2026-11-03T11:00:00Z", version: 3 },
+    ];
+    expect(latestVerification(history)?.actorName).toBe("Second Verifier");
+    expect(latestVerification(history)?.internalReference).toBe("VCH-2");
+    expect(latestVerification(history.slice(0, 2))?.actorName).toBe("Original Verifier");
   });
 
   it("requires a reference to verify and a reason to clarify or reopen", () => {
