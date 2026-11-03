@@ -117,6 +117,7 @@ function profileFor(id: string, overrides: Partial<Profile> = {}): Profile {
     can_manage_payments: false,
     can_reverse_payments: false,
     can_activate_zero_subscriptions: false,
+    can_review_payments: false,
     ...overrides,
   };
 }

@@ -15,6 +15,7 @@ import {
 } from "../lib/payment-tracking";
 import { supabase } from "../lib/supabase";
 import type { PiVersion } from "../lib/types";
+import { compactReviewLabel, receiptReviewDisplay, receivedReceiptPath } from "../lib/payment-review";
 import { PAYMENT_TRACKING_ANCHOR } from "../lib/reporting";
 import { fetchPiVersionSnapshot, versionAgreedTotal, versionCurrency, versionDisplayNumber } from "../lib/pi-versions";
 import { Banner, Button, Field, LoadingNote, Select, TextArea, controlClass, tableWrapClass, tdClass, thClass, theadClass } from "./ui";
@@ -46,6 +47,16 @@ type ObligationRow = {
   subscription_obligation_id: string | null;
 };
 
+type ReceiptReviewEmbed = {
+  status: string;
+  internal_reference: string | null;
+  note: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  ever_verified: boolean;
+  version: number;
+};
+
 type ReceiptRow = {
   id: string;
   amount: string | number;
@@ -59,7 +70,13 @@ type ReceiptRow = {
   reversed_at: string | null;
   reversed_by: string | null;
   reversal_reason: string | null;
+  payment_receipt_reviews?: ReceiptReviewEmbed | ReceiptReviewEmbed[] | null;
 };
+
+function embeddedReview(value: ReceiptRow["payment_receipt_reviews"]): ReceiptReviewEmbed | null {
+  if (!value) return null;
+  return Array.isArray(value) ? value[0] ?? null : value;
+}
 
 type AllocationRow = {
   receipt_id: string;
@@ -173,7 +190,7 @@ export function PaymentTrackingSection({
     }
     const [obligationResult, receiptResult, subscriptionResult] = await Promise.all([
       supabase.from("payment_obligation_balances").select("*").eq("plan_id", nextPlan.id).order("position"),
-      supabase.from("payment_receipts").select("*").eq("plan_id", nextPlan.id).order("received_on").order("recorded_at"),
+      supabase.from("payment_receipts").select("*, payment_receipt_reviews(status, internal_reference, note, reviewed_by, reviewed_at, ever_verified, version)").eq("plan_id", nextPlan.id).order("received_on").order("recorded_at"),
       supabase.from("subscriptions").select("id, source_obligation_id, state, start_date, product_model, commitment_years").eq("pi_id", piId),
     ]);
     if (obligationResult.error) throw obligationResult.error;
@@ -185,7 +202,11 @@ export function PaymentTrackingSection({
       ? { data: [], error: null }
       : await supabase.from("payment_allocations").select("receipt_id, obligation_id, amount").in("receipt_id", receiptIds);
     if (allocationResult.error) throw allocationResult.error;
-    const userIds = [...new Set(nextReceipts.flatMap((receipt) => [receipt.recorded_by, receipt.reversed_by].filter((id): id is string => Boolean(id))))];
+    const userIds = [...new Set(nextReceipts.flatMap((receipt) => [
+      receipt.recorded_by,
+      receipt.reversed_by,
+      embeddedReview(receipt.payment_receipt_reviews)?.reviewed_by,
+    ].filter((id): id is string => Boolean(id))))];
     const nameResult = userIds.length === 0
       ? { data: [], error: null }
       : await supabase.from("profiles").select("id, full_name").in("id", userIds);
@@ -578,6 +599,12 @@ export function PaymentTrackingSection({
               <ul className="mt-2 divide-y divide-line">
                 {receipts.map((receipt) => {
                   const receiptAllocations = allocations.filter((item) => item.receipt_id === receipt.id);
+                  const review = embeddedReview(receipt.payment_receipt_reviews);
+                  const reviewStatus = receiptReviewDisplay({
+                    reversed: Boolean(receipt.reversed_at),
+                    status: review?.status ?? null,
+                    everVerified: review?.ever_verified === true,
+                  });
                   return (
                     <li key={receipt.id} className="py-2 text-sm">
                       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -587,6 +614,13 @@ export function PaymentTrackingSection({
                         </p>
                         <p className="text-xs text-muted">Recorded by {names[receipt.recorded_by] || "staff"}</p>
                       </div>
+                      <p className="text-xs text-secondary">
+                        {compactReviewLabel(reviewStatus)}
+                        {review?.internal_reference ? ` · Finance reference ${review.internal_reference}` : ""}
+                        {" · "}
+                        <Link to={receivedReceiptPath(receipt.id)}>Review history</Link>
+                      </p>
+                      {reviewStatus === "needs_clarification" && review?.note ? <p className="text-xs text-ink">Clarification: {review.note}</p> : null}
                       <p className="text-xs text-muted">
                         {receiptAllocations.map((item) => {
                           const obligation = obligations.find((candidate) => candidate.id === item.obligation_id);

@@ -375,3 +375,19 @@ Value CRM already has `proforma_invoices.payment_schedule`, the payment function
   - The editor still shows the taxable base. Discount, shipping, installation, bank charge, and the tax percentage stay on the PDF when they already would. The tax amount is still the saved tax amount.
   - No numbering, payment, subscription, or permission behaviour changes.
 - References: `src/lib/pdf.ts`, `src/lib/pdf.test.ts`, `README.md`
+
+## DEC-026
+
+- Decision date: 2026-11-03
+- Documented: 2026-11-03
+- Status: Implemented in this revision. Not applied to Value CRM. No migration has been run, no Edge Function has been deployed, and no production user or receipt was created.
+- Decision: Finance reviews a receipt after staff have recorded it. The review stores an internal payment reference and a status on a separate row. It does not record the money again and does not change the receipt’s financial effect.
+- Reason: Finance needs to check a recorded payment against internal records and keep an internal voucher reference. That check is not a second receipt, and it should not wait until the PI is fully paid. An issued offer with no payment plan is still not a finance task.
+- Consequences or limitations:
+  - The new profile flag is `can_review_payments`, labelled “Review received payments”. It defaults to false. Active administrators already pass `private.has_flag`. The flag does not grant recording, reversal, purchase-price access, or a wider set of PIs. An older `admin-users` update that omits the flag leaves the stored value unchanged.
+  - The bank or customer reference on `payment_receipts` stays as recorded. The internal reference is at most 80 characters and is not unique. A finance note or reason is at most 400 characters. No review row is created for an existing receipt; absence means Awaiting review.
+  - Verified requires an internal reference. Needs clarification and Reopen review require a reason. Reopening returns the current review to awaiting review and keeps the previous verification in append-only history. A reversed receipt is excluded from the active queues, can still be found under Reversed, and cannot be newly verified, clarified, or reopened. An earlier verification is labelled “Reversed · previously verified”.
+  - Review locks the payment plan, then its obligations in id order, then the receipt, then the review row. A stale version is rejected. The reviewer and timestamp come from the database session. Direct authenticated writes cannot bypass the review actions.
+  - Payments keeps Due payments as the default tab. Received payments is one row per receipt. People who can read the source PI can read the review. Only the review flag can change it. Balances, allocations, subscriptions, snapshots, numbering, and customer PDFs are unchanged. The subscription state “Payment review required” is unchanged and is not this workflow.
+  - Internal references are not generated and are not checked for uniqueness. There is no bank-statement import. The SQL, the `admin-users` function, and the frontend are not yet released. The rollout order is the new migration, then the updated function, then the frontend, then explicit permission grants.
+- References: `supabase/migrations/20261103150000_finance_payment_review.sql`, `supabase/tests/finance_payment_review.sql`, `supabase/tests/finance_review_concurrent.sh`, `supabase/functions/admin-users/index.ts`, `src/pages/Payments.tsx`, `src/components/ReceivedPayments.tsx`, `src/components/PaymentTrackingSection.tsx`, `README.md`

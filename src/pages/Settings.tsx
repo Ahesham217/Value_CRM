@@ -25,6 +25,7 @@ type ManagedUser = {
   can_manage_payments: boolean;
   can_reverse_payments: boolean;
   can_activate_zero_subscriptions: boolean;
+  can_review_payments: boolean;
 };
 
 type SettingsTab = "company" | "terms" | "users";
@@ -47,6 +48,7 @@ const emptyUser = (): ManagedUser => ({
   can_manage_payments: false,
   can_reverse_payments: false,
   can_activate_zero_subscriptions: false,
+  can_review_payments: false,
 });
 
 async function callAdmin<T>(body: Record<string, unknown>): Promise<T> {
@@ -139,6 +141,7 @@ export function SettingsPage() {
       can_manage_payments: user.can_manage_payments === true,
       can_reverse_payments: user.can_reverse_payments === true,
       can_activate_zero_subscriptions: user.can_activate_zero_subscriptions === true,
+      can_review_payments: user.can_review_payments === true,
     }));
     setUserView("form");
   }

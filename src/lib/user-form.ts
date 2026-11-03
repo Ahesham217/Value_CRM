@@ -47,6 +47,11 @@ export const permissionFormGroups: PermissionGroup[] = [
       },
       { key: "can_reverse_payments", label: "Reverse receipts" },
       { key: "can_activate_zero_subscriptions", label: "Activate zero-value subscriptions" },
+      {
+        key: "can_review_payments",
+        label: "Review received payments",
+        hint: "Check a recorded receipt and save an internal reference. This does not record or reverse a receipt.",
+      },
     ],
   },
   {
