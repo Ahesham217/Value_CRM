@@ -293,7 +293,11 @@ describe("PI pdf", () => {
     expect(usd.text).toContain("AE690070100001000081724");
     expect(usd.text).toContain("ARAIAEADXXX");
     expect(usd.text).toContain("CITIUS33XXX");
-    expect(usd.text).toContain("Taxable base");
+    expect(usd.text).toContain("Net items");
+    expect(usd.text).toContain("USD 190.00");
+    expect(usd.text).toContain("Tax (5%)");
+    expect(usd.text).toContain("USD 9.75");
+    expect(usd.text).not.toContain("Taxable base");
     expect(usd.text).toContain("USD 276.75");
     expect(usd.text).toContain("Bank charge");
     expect(usd.text).toContain("USD 72.00");
