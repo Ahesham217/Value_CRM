@@ -231,7 +231,6 @@ function totals(snapshot: PiSnapshot): Content {
     rows.push(totalRow("Bank charge", formatMoney(adjustments.bank_charge, currency)));
   }
   if (adjustments.tax_enabled) {
-    rows.push(totalRow("Taxable base", formatMoney(adjustments.taxable_base, currency)));
     const percent = adjustments.tax_percent ? ` (${adjustments.tax_percent}%)` : "";
     rows.push(totalRow(`Tax${percent}`, formatMoney(adjustments.tax_amount, currency)));
   }

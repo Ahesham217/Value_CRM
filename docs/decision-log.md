@@ -362,3 +362,16 @@ Value CRM already has `proforma_invoices.payment_schedule`, the payment function
   - The older untracked-issued count remains in the collection summary for existing callers. The dashboard does not show it as a warning, badge, or setup task.
   - On 25 October 2026 the SQL was applied to Value CRM as `20261025121051 dashboard_overview_aggregates` before this frontend is served. The apply was one recorded part. The final definitions are the reviewed source. No business rows were created. An older frontend ignores the new fields. This frontend needs them. No browser check was made.
 - References: `supabase/migrations/20261025143000_dashboard_overview_aggregates.sql`, `supabase/tests/owner_dashboard_payments.sql`, `src/pages/Dashboard.tsx`, `src/components/DashboardOverview.tsx`, `src/lib/reporting.ts`, `README.md`
+
+## DEC-025
+
+- Decision date: 2026-11-03
+- Documented: 2026-11-03
+- Status: Implemented in this frontend. Not deployed. No migration was added or applied.
+- Decision: The customer PI PDF prints the net items amount, when a discount applies, and then the tax line. It does not print a taxable base row.
+- Reason: Net items and the taxable base are the same amount on these documents, so printing both repeats one figure before the tax.
+- Consequences or limitations:
+  - This changes only the totals block drawn by the PDF renderer. Draft preview and issued download use that same renderer, including older snapshots. Saved snapshots, tax amounts, and grand totals are not rewritten.
+  - The editor still shows the taxable base. Discount, shipping, installation, bank charge, and the tax percentage stay on the PDF when they already would. The tax amount is still the saved tax amount.
+  - No numbering, payment, subscription, or permission behaviour changes.
+- References: `src/lib/pdf.ts`, `src/lib/pdf.test.ts`, `README.md`
